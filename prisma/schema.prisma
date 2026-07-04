@@ -1,0 +1,1082 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================================
+// RIMPay Social - Database Schema
+// National-scale institutional backend for social payment management.
+//
+// Core principles enforced in this schema:
+// - Traceability: audit logs and status histories are append-only, never
+//   physically deleted.
+// - Critical business rules enforced at the database level via unique
+//   constraints (no duplicate payments, no duplicate assignments, no
+//   duplicate offline sync items).
+// - Anomaly detection is first-class: anomalies are stored as real records,
+//   not just UI warnings.
+// - Soft delete is used only for entities that can become "inactive" while
+//   still being referenced historically (users, beneficiaries, agents,
+//   devices, social programs, payment operations).
+// =============================================================================
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+
+  @@map("user_status")
+}
+
+enum AgentStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+
+  @@map("agent_status")
+}
+
+enum DeviceStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+
+  @@map("device_status")
+}
+
+enum SocialProgramStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+  CLOSED
+
+  @@map("social_program_status")
+}
+
+enum OperationStatus {
+  DRAFT
+  VALIDATED
+  OPEN
+  IN_PROGRESS
+  SUSPENDED
+  CLOSED
+  ARCHIVED
+
+  @@map("operation_status")
+}
+
+enum InclusionStatus {
+  INCLUDED
+  EXCLUDED
+  PENDING_REVIEW
+  SUSPENDED
+
+  @@map("inclusion_status")
+}
+
+enum PaymentStatus {
+  PENDING
+  VALIDATED
+  PAID
+  CANCELLED
+  REJECTED
+  CONFLICT
+
+  @@map("payment_status")
+}
+
+enum ValidationOutcome {
+  ATTEMPTED
+  ACCEPTED
+  REJECTED
+
+  @@map("validation_outcome")
+}
+
+enum AuthMethod {
+  CNI
+  MRZ
+  QR_CODE
+  PHONE_CALL
+  COMMUNITY_WITNESS
+  BENEFICIARY_CARD
+  MANUAL_EXCEPTION
+
+  @@map("auth_method")
+}
+
+enum RecipientType {
+  BENEFICIARY
+  REPRESENTATIVE
+  COMMUNITY_WITNESS
+  OTHER
+
+  @@map("recipient_type")
+}
+
+enum SyncStatus {
+  NOT_SYNCED
+  SYNCED
+  CONFLICT
+
+  @@map("sync_status")
+}
+
+enum SyncBatchStatus {
+  RECEIVED
+  PROCESSING
+  COMPLETED
+  PARTIAL_FAILED
+  FAILED
+
+  @@map("sync_batch_status")
+}
+
+enum SyncItemStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CONFLICT
+
+  @@map("sync_item_status")
+}
+
+enum AnomalyType {
+  DUPLICATE_NNI
+  DUPLICATE_PHONE
+  MULTIPLE_PAYMENT
+  PAYMENT_ALREADY_VALIDATED
+  MISSING_GPS
+  GPS_OUT_OF_ZONE
+  SYNC_CONFLICT
+  UNKNOWN_DEVICE
+  AGENT_NOT_ASSIGNED
+  BENEFICIARY_MODIFIED_AFTER_PAYMENT
+
+  @@map("anomaly_type")
+}
+
+enum AnomalySeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+
+  @@map("anomaly_severity")
+}
+
+enum AnomalyStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  DISMISSED
+
+  @@map("anomaly_status")
+}
+
+enum AuditSource {
+  WEB
+  MOBILE
+  API
+  SYSTEM
+
+  @@map("audit_source")
+}
+
+enum ReportType {
+  BENEFICIARIES
+  PAYMENT_OPERATION
+  PAYMENTS
+  ANOMALIES
+  AGENTS
+  AUDIT
+  SYNC
+
+  @@map("report_type")
+}
+
+enum ReportFormat {
+  PDF
+  EXCEL
+  CSV
+  JSON
+
+  @@map("report_format")
+}
+
+enum ReportStatus {
+  PENDING
+  GENERATING
+  COMPLETED
+  FAILED
+
+  @@map("report_status")
+}
+
+enum GeoAssignmentStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("geo_assignment_status")
+}
+
+enum DocumentType {
+  CNI
+  QR_CARD
+  BENEFICIARY_CARD
+  OTHER
+
+  @@map("document_type")
+}
+
+enum ContactType {
+  PRIMARY
+  SECONDARY
+  OTHER
+
+  @@map("contact_type")
+}
+
+enum BeneficiaryStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  DECEASED
+  MOVED
+  UNDER_REVIEW
+
+  @@map("beneficiary_status")
+}
+
+enum OperationAgentStatus {
+  ACTIVE
+  SUSPENDED
+  COMPLETED
+  REMOVED
+
+  @@map("operation_agent_status")
+}
+
+// =============================================================================
+// AUTHENTICATION / RBAC
+// =============================================================================
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  fullName     String     @map("full_name")
+  status       UserStatus @default(ACTIVE)
+  authVersion  Int        @default(0) @map("auth_version")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  userRoles            UserRole[]
+  authSessions         AuthSession[]
+  agent                Agent?
+  auditLogs            AuditLog[]
+  resolvedAnomalies    Anomaly[]              @relation("AnomalyResolvedBy")
+  generatedReports     Report[]
+  paymentStatusChanges PaymentStatusHistory[]
+  beneficiaryHistories BeneficiaryHistory[]
+
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  roleId    String   @map("role_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id           String   @id @default(uuid())
+  roleId       String   @map("role_id")
+  permissionId String   @map("permission_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model AuthSession {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  lastUsedAt    DateTime  @default(now()) @map("last_used_at")
+  revokedAt     DateTime? @map("revoked_at")
+  revokedReason String?   @map("revoked_reason")
+  userAgent     String?   @map("user_agent")
+  ipAddress     String?   @map("ip_address")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+
+  @@index([userId, revokedAt])
+  @@index([revokedAt])
+  @@map("auth_sessions")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  sessionId String    @map("session_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  session AuthSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("refresh_tokens")
+}
+
+// =============================================================================
+// GEOGRAPHY
+// =============================================================================
+
+model Region {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  moughataas                 Moughataa[]
+  paymentOperations          PaymentOperation[]
+  agentGeographicAssignments AgentGeographicAssignment[]
+
+  @@map("regions")
+}
+
+model Moughataa {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  regionId  String   @map("region_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  region                     Region                      @relation(fields: [regionId], references: [id], onDelete: Restrict)
+  communes                   Commune[]
+  paymentOperations          PaymentOperation[]
+  agentGeographicAssignments AgentGeographicAssignment[]
+
+  @@index([regionId])
+  @@map("moughataas")
+}
+
+model Commune {
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique
+  moughataaId String   @map("moughataa_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  moughataa                  Moughataa                   @relation(fields: [moughataaId], references: [id], onDelete: Restrict)
+  localities                 Locality[]
+  paymentOperations          PaymentOperation[]
+  agentGeographicAssignments AgentGeographicAssignment[]
+
+  @@index([moughataaId])
+  @@map("communes")
+}
+
+model Locality {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  communeId String   @map("commune_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  commune                    Commune                     @relation(fields: [communeId], references: [id], onDelete: Restrict)
+  beneficiaries              Beneficiary[]
+  paymentOperations          PaymentOperation[]
+  agentGeographicAssignments AgentGeographicAssignment[]
+
+  @@index([communeId])
+  @@map("localities")
+}
+
+// =============================================================================
+// BENEFICIARIES
+// =============================================================================
+
+model Beneficiary {
+  id           String            @id @default(uuid())
+  registryCode String            @unique @map("registry_code")
+  fullName     String            @map("full_name")
+  // NNI is intentionally NOT unique in v1. Real-world data may contain
+  // missing, incorrect, or duplicated NNI values. Duplicates are detected
+  // and recorded via the Anomaly model (DUPLICATE_NNI), not blocked at the
+  // database level.
+  nni          String?
+  gender       String?
+  birthDate    DateTime?         @map("birth_date")
+  localityId   String            @map("locality_id")
+  status       BeneficiaryStatus @default(ACTIVE)
+  source       String?
+  notes        String?
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  locality                      Locality                      @relation(fields: [localityId], references: [id], onDelete: Restrict)
+  contacts                      BeneficiaryContact[]
+  documents                     BeneficiaryDocument[]
+  histories                     BeneficiaryHistory[]
+  paymentOperationBeneficiaries PaymentOperationBeneficiary[]
+  payments                      Payment[]
+  anomalies                     Anomaly[]
+
+  @@index([nni])
+  @@index([fullName])
+  @@index([localityId])
+  @@index([status])
+  @@map("beneficiaries")
+}
+
+model BeneficiaryContact {
+  id            String      @id @default(uuid())
+  beneficiaryId String      @map("beneficiary_id")
+  type          ContactType @default(PRIMARY)
+  // Phone is intentionally NOT unique in v1. Phone numbers can be shared or
+  // change over time. Duplicates are detected via the Anomaly model
+  // (DUPLICATE_PHONE), not blocked at the database level.
+  phone         String
+  ownerName     String?     @map("owner_name")
+  isVerified    Boolean     @default(false) @map("is_verified")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  beneficiary Beneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
+
+  @@index([beneficiaryId])
+  @@index([phone])
+  @@map("beneficiary_contacts")
+}
+
+model BeneficiaryDocument {
+  id            String       @id @default(uuid())
+  beneficiaryId String       @map("beneficiary_id")
+  type          DocumentType
+  fileReference String       @map("file_reference")
+  notes         String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  beneficiary Beneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
+
+  @@index([beneficiaryId])
+  @@map("beneficiary_documents")
+}
+
+// Beneficiary history is append-only and must never be deleted. It records
+// every important change to a beneficiary's data for traceability.
+model BeneficiaryHistory {
+  id            String  @id @default(uuid())
+  beneficiaryId String  @map("beneficiary_id")
+  oldValues     Json?   @map("old_values")
+  newValues     Json?   @map("new_values")
+  changedById   String? @map("changed_by_id")
+  reason        String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // onDelete: Restrict (not Cascade) - history records must survive even if
+  // the beneficiary record itself is later removed, since this table is
+  // append-only and must never be physically deleted.
+  beneficiary Beneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Restrict)
+  changedBy   User?       @relation(fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([beneficiaryId])
+  @@index([createdAt])
+  @@map("beneficiary_histories")
+}
+
+// =============================================================================
+// SOCIAL PROGRAMS
+// =============================================================================
+
+model SocialProgram {
+  id           String              @id @default(uuid())
+  name         String
+  code         String              @unique
+  type         String?
+  institution  String?
+  description  String?
+  status       SocialProgramStatus @default(DRAFT)
+  startDate    DateTime?           @map("start_date")
+  endDate      DateTime?           @map("end_date")
+  budgetAmount Decimal?            @map("budget_amount") @db.Decimal(18, 2)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  paymentOperations PaymentOperation[]
+
+  @@map("social_programs")
+}
+
+// =============================================================================
+// PAYMENT OPERATIONS
+// =============================================================================
+
+model PaymentOperation {
+  id              String          @id @default(uuid())
+  socialProgramId String          @map("social_program_id")
+  name            String
+  code            String          @unique
+  period          String?
+  // Geographic scope: an operation targets exactly one administrative level.
+  // All four FKs are nullable; app-level validation ensures only the
+  // relevant level(s) for the chosen scope are set.
+  regionId        String?         @map("region_id")
+  moughataaId     String?         @map("moughataa_id")
+  communeId       String?         @map("commune_id")
+  localityId      String?         @map("locality_id")
+  plannedAmount   Decimal?        @map("planned_amount") @db.Decimal(18, 2)
+  paidAmount      Decimal         @default(0) @map("paid_amount") @db.Decimal(18, 2)
+  executionRate   Decimal         @default(0) @map("execution_rate") @db.Decimal(5, 2)
+  status          OperationStatus @default(DRAFT)
+  startDate       DateTime?       @map("start_date")
+  endDate         DateTime?       @map("end_date")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  socialProgram SocialProgram @relation(fields: [socialProgramId], references: [id], onDelete: Restrict)
+  region        Region?       @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  moughataa     Moughataa?    @relation(fields: [moughataaId], references: [id], onDelete: SetNull)
+  commune       Commune?      @relation(fields: [communeId], references: [id], onDelete: SetNull)
+  locality      Locality?     @relation(fields: [localityId], references: [id], onDelete: SetNull)
+
+  operationBeneficiaries PaymentOperationBeneficiary[]
+  operationAgents        OperationAgent[]
+  payments               Payment[]
+  anomalies              Anomaly[]
+
+  @@index([status])
+  @@index([socialProgramId])
+  @@index([regionId])
+  @@index([moughataaId])
+  @@index([communeId])
+  @@index([localityId])
+  @@index([startDate])
+  @@index([endDate])
+  @@map("payment_operations")
+}
+
+// Assignment table: which beneficiaries are included in which payment
+// operation, and at what planned amount. A beneficiary cannot be assigned
+// to the same operation twice.
+model PaymentOperationBeneficiary {
+  id                 String          @id @default(uuid())
+  paymentOperationId String          @map("payment_operation_id")
+  beneficiaryId      String          @map("beneficiary_id")
+  plannedAmount      Decimal?        @map("planned_amount") @db.Decimal(18, 2)
+  status             InclusionStatus @default(PENDING_REVIEW)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  paymentOperation PaymentOperation @relation(fields: [paymentOperationId], references: [id], onDelete: Cascade)
+  beneficiary      Beneficiary      @relation(fields: [beneficiaryId], references: [id], onDelete: Restrict)
+
+  // Critical business rule: a beneficiary cannot be included twice in the
+  // same payment operation.
+  @@unique([paymentOperationId, beneficiaryId])
+  @@index([beneficiaryId])
+  @@index([status])
+  @@map("payment_operation_beneficiaries")
+}
+
+// Assignment table: which agents can work on which payment operations.
+// An agent cannot be assigned to the same operation twice.
+model OperationAgent {
+  id                 String               @id @default(uuid())
+  paymentOperationId String               @map("payment_operation_id")
+  agentId            String               @map("agent_id")
+  assignedArea       String?              @map("assigned_area")
+  status             OperationAgentStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  paymentOperation PaymentOperation @relation(fields: [paymentOperationId], references: [id], onDelete: Cascade)
+  agent            Agent            @relation(fields: [agentId], references: [id], onDelete: Restrict)
+
+  // Critical business rule: an agent cannot be assigned to the same
+  // payment operation twice.
+  @@unique([paymentOperationId, agentId])
+  @@index([agentId])
+  @@index([status])
+  @@map("operation_agents")
+}
+
+// =============================================================================
+// AGENTS / DEVICES
+// =============================================================================
+
+model Agent {
+  id           String      @id @default(uuid())
+  userId       String      @unique @map("user_id")
+  phone        String?
+  employeeCode String?     @unique @map("employee_code")
+  status       AgentStatus @default(ACTIVE)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  user                       User                        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  devices                    Device[]
+  operationAgents            OperationAgent[]
+  agentGeographicAssignments AgentGeographicAssignment[]
+  paymentValidations         PaymentValidation[]
+  syncBatches                SyncBatch[]
+  anomalies                  Anomaly[]
+
+  @@map("agents")
+}
+
+// An agent may have a standing geographic assignment independent of any
+// single payment operation. Exactly one of regionId / moughataaId /
+// communeId / localityId should be set per assignment. Prisma cannot
+// enforce "exactly one of N nullable FKs" at the schema level - this MUST
+// be validated at the application layer.
+model AgentGeographicAssignment {
+  id          String              @id @default(uuid())
+  agentId     String              @map("agent_id")
+  regionId    String?             @map("region_id")
+  moughataaId String?             @map("moughataa_id")
+  communeId   String?             @map("commune_id")
+  localityId  String?             @map("locality_id")
+  status      GeoAssignmentStatus @default(ACTIVE)
+  startsAt    DateTime?           @map("starts_at")
+  endsAt      DateTime?           @map("ends_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  agent     Agent      @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  region    Region?    @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  moughataa Moughataa? @relation(fields: [moughataaId], references: [id], onDelete: SetNull)
+  commune   Commune?   @relation(fields: [communeId], references: [id], onDelete: SetNull)
+  locality  Locality?  @relation(fields: [localityId], references: [id], onDelete: SetNull)
+
+  @@index([agentId])
+  @@map("agent_geographic_assignments")
+}
+
+model Device {
+  id         String       @id @default(uuid())
+  agentId    String       @map("agent_id")
+  deviceUid  String       @unique @map("device_uid")
+  platform   String?
+  model      String?
+  appVersion String?      @map("app_version")
+  status     DeviceStatus @default(ACTIVE)
+  lastSeenAt DateTime?    @map("last_seen_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  agent              Agent               @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  paymentValidations PaymentValidation[]
+  syncBatches        SyncBatch[]
+  syncItems          SyncItem[]
+  anomalies          Anomaly[]
+
+  @@index([agentId])
+  @@map("devices")
+}
+
+// =============================================================================
+// PAYMENTS
+// =============================================================================
+
+// Represents the payment state for one beneficiary inside one payment
+// operation.
+//
+// Critical business rule: a beneficiary must not receive duplicate payment
+// records for the same payment operation. Enforced via a unique constraint
+// on (paymentOperationId, beneficiaryId).
+//
+// Payments must never be physically deleted. Cancellations and other
+// lifecycle transitions are recorded in PaymentStatusHistory.
+//
+// IMPORTANT - cross-table business rule NOT enforced by this schema:
+// A Payment(paymentOperationId, beneficiaryId) must correspond to a row in
+// PaymentOperationBeneficiary with the same (paymentOperationId,
+// beneficiaryId) AND status = INCLUDED. A composite foreign key from
+// Payment(paymentOperationId, beneficiaryId) to
+// PaymentOperationBeneficiary(paymentOperationId, beneficiaryId) is
+// technically possible in Prisma (PaymentOperationBeneficiary already has a
+// matching @@unique), but was deliberately NOT added here: it would create a
+// second composite FK constraint reusing the same two scalar columns that
+// already individually reference payment_operations.id and beneficiaries.id,
+// adding significant relational complexity while still being unable to
+// enforce the status = INCLUDED condition. The service layer MUST verify,
+// before creating a Payment, that a PaymentOperationBeneficiary row exists
+// for the same (paymentOperationId, beneficiaryId) with status = INCLUDED.
+model Payment {
+  id                 String        @id @default(uuid())
+  paymentOperationId String        @map("payment_operation_id")
+  beneficiaryId      String        @map("beneficiary_id")
+  amount             Decimal       @db.Decimal(18, 2)
+  status             PaymentStatus @default(PENDING)
+  syncStatus         SyncStatus    @default(NOT_SYNCED) @map("sync_status")
+  plannedAt          DateTime?     @map("planned_at")
+  paidAt             DateTime?     @map("paid_at")
+  cancelledAt        DateTime?     @map("cancelled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  paymentOperation PaymentOperation @relation(fields: [paymentOperationId], references: [id], onDelete: Restrict)
+  beneficiary      Beneficiary      @relation(fields: [beneficiaryId], references: [id], onDelete: Restrict)
+
+  validations   PaymentValidation[]
+  statusHistory PaymentStatusHistory[]
+  anomalies     Anomaly[]
+  syncItems     SyncItem[]
+
+  // Critical business rule: a beneficiary cannot be paid twice within the
+  // same payment operation.
+  @@unique([paymentOperationId, beneficiaryId])
+  @@index([paymentOperationId])
+  @@index([beneficiaryId])
+  @@index([status])
+  @@index([syncStatus])
+  @@map("payments")
+}
+
+// Records each field validation attempt for a payment. A payment can have
+// multiple validation attempts (ATTEMPTED, ACCEPTED, REJECTED) - agents may
+// retry due to GPS/auth/sync issues or submit multiple offline attempts.
+//
+// IMPORTANT - cross-table business rule NOT enforced by this schema:
+// Before accepting a PaymentValidation, the service layer MUST verify that
+// the agent is authorized to validate this payment:
+//   1. Resolve payment.paymentOperationId from the Payment record.
+//   2. Confirm an OperationAgent row exists for
+//      (paymentOperationId, agentId) with status = ACTIVE.
+// Prisma cannot enforce this with the current structure because it would
+// require a multi-hop conditional check (Payment -> PaymentOperation ->
+// OperationAgent) that depends on row status, not just FK existence. If this
+// check fails, an AGENT_NOT_ASSIGNED anomaly should be recorded.
+model PaymentValidation {
+  id             String            @id @default(uuid())
+  paymentId      String            @map("payment_id")
+  agentId        String            @map("agent_id")
+  deviceId       String            @map("device_id")
+  outcome        ValidationOutcome @default(ATTEMPTED)
+  authMethod     AuthMethod        @map("auth_method")
+  latitude       Decimal?          @db.Decimal(10, 7)
+  longitude      Decimal?          @db.Decimal(10, 7)
+  recipientType  RecipientType?    @map("recipient_type")
+  recipientName  String?           @map("recipient_name")
+  syncBatchId    String?           @map("sync_batch_id")
+  idempotencyKey String?           @map("idempotency_key")
+  validatedAt    DateTime          @map("validated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  payment   Payment    @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  agent     Agent      @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  device    Device     @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  syncBatch SyncBatch? @relation(fields: [syncBatchId], references: [id], onDelete: SetNull)
+
+  @@index([paymentId])
+  @@index([agentId])
+  @@index([deviceId])
+  @@index([outcome])
+  @@index([authMethod])
+  @@index([validatedAt])
+  @@index([syncBatchId])
+  @@index([idempotencyKey])
+  @@map("payment_validations")
+}
+
+// Append-only lifecycle history for a payment. Every status transition
+// (including cancellations) is recorded here. This table must never be
+// physically deleted.
+model PaymentStatusHistory {
+  id         String         @id @default(uuid())
+  paymentId  String         @map("payment_id")
+  fromStatus PaymentStatus? @map("from_status")
+  toStatus   PaymentStatus  @map("to_status")
+  changedBy  String?        @map("changed_by")
+  reason     String?
+  notes      String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  user    User?   @relation(fields: [changedBy], references: [id], onDelete: SetNull)
+
+  @@index([paymentId])
+  @@index([changedBy])
+  @@index([createdAt])
+  @@map("payment_status_history")
+}
+
+// =============================================================================
+// OFFLINE SYNC
+// =============================================================================
+
+// Represents one synchronization attempt from a mobile device. Must never
+// be physically deleted - it is part of the audit trail for offline
+// payment validations.
+//
+// IMPORTANT - cross-table business rule NOT enforced by this schema:
+// Before accepting a SyncBatch, the service layer MUST verify that
+// device.agentId == syncBatch.agentId (i.e. the submitting device actually
+// belongs to the agent claimed in the batch). If this check fails, an
+// UNKNOWN_DEVICE anomaly should be recorded and the batch should be
+// rejected or flagged for review.
+model SyncBatch {
+  id            String          @id @default(uuid())
+  agentId       String          @map("agent_id")
+  deviceId      String          @map("device_id")
+  batchUid      String          @unique @map("batch_uid")
+  status        SyncBatchStatus @default(RECEIVED)
+  startedAt     DateTime?       @map("started_at")
+  completedAt   DateTime?       @map("completed_at")
+  totalItems    Int             @default(0) @map("total_items")
+  acceptedItems Int             @default(0) @map("accepted_items")
+  rejectedItems Int             @default(0) @map("rejected_items")
+  conflictItems Int             @default(0) @map("conflict_items")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  agent  Agent  @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+
+  syncItems          SyncItem[]
+  paymentValidations PaymentValidation[]
+  anomalies          Anomaly[]
+
+  @@index([agentId])
+  @@index([deviceId])
+  @@map("sync_batches")
+}
+
+// Represents each item submitted in a sync batch.
+//
+// Critical business rule: offline sync idempotency. The combination of
+// (deviceId, localId, itemType) must be unique so that if a device sends
+// the same payment twice, the backend does not process it twice. The
+// idempotencyKey is also indexed for fast lookup.
+//
+// Must never be physically deleted - required for sync audit trail and
+// conflict resolution.
+model SyncItem {
+  id              String         @id @default(uuid())
+  syncBatchId     String         @map("sync_batch_id")
+  deviceId        String         @map("device_id")
+  localId         String         @map("local_id")
+  itemType        String         @map("item_type")
+  idempotencyKey  String         @map("idempotency_key")
+  payload         Json
+  status          SyncItemStatus @default(PENDING)
+  errorMessage    String?        @map("error_message")
+  processedAt     DateTime?      @map("processed_at")
+  linkedPaymentId String?        @map("linked_payment_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  syncBatch     SyncBatch @relation(fields: [syncBatchId], references: [id], onDelete: Restrict)
+  device        Device    @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  linkedPayment Payment?  @relation(fields: [linkedPaymentId], references: [id], onDelete: SetNull)
+
+  anomalies Anomaly[]
+
+  // Critical business rule: prevents the same offline item from being
+  // processed twice, even across retried sync batches from the same device.
+  @@unique([deviceId, localId, itemType])
+  @@index([idempotencyKey])
+  @@index([status])
+  @@index([syncBatchId])
+  @@map("sync_items")
+}
+
+// =============================================================================
+// AUDIT LOGS
+// =============================================================================
+
+// Append-only audit trail for every sensitive action in the system.
+// AuditLog records must never be physically deleted.
+//
+// entityType/entityId form a generic polymorphic reference (Prisma does not
+// support true polymorphic relations) and intentionally have no foreign key
+// constraint, since they may point to any entity in the system.
+model AuditLog {
+  id         String      @id @default(uuid())
+  userId     String?     @map("user_id")
+  action     String
+  entityType String      @map("entity_type")
+  entityId   String?     @map("entity_id")
+  oldValues  Json?       @map("old_values")
+  newValues  Json?       @map("new_values")
+  source     AuditSource @default(SYSTEM)
+  ipAddress  String?     @map("ip_address")
+  deviceId   String?     @map("device_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+// =============================================================================
+// ANOMALIES
+// =============================================================================
+
+// Stores detected risks and control issues as first-class records (not just
+// UI warnings). Anomalies can be linked to a beneficiary, payment,
+// operation, agent, device, or sync item.
+model Anomaly {
+  id       String          @id @default(uuid())
+  type     AnomalyType
+  severity AnomalySeverity @default(MEDIUM)
+  status   AnomalyStatus   @default(OPEN)
+
+  // Generic polymorphic reference for anomaly types not covered by the
+  // explicit relations below.
+  entityType String  @map("entity_type")
+  entityId   String? @map("entity_id")
+
+  beneficiaryId      String? @map("beneficiary_id")
+  paymentId          String? @map("payment_id")
+  paymentOperationId String? @map("payment_operation_id")
+  agentId            String? @map("agent_id")
+  deviceId           String? @map("device_id")
+  syncBatchId        String? @map("sync_batch_id")
+  syncItemId         String? @map("sync_item_id")
+
+  description     String?
+  resolutionNotes String? @map("resolution_notes")
+  resolvedBy      String? @map("resolved_by")
+
+  detectedAt DateTime  @default(now()) @map("detected_at")
+  resolvedAt DateTime? @map("resolved_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  beneficiary      Beneficiary?      @relation(fields: [beneficiaryId], references: [id], onDelete: SetNull)
+  payment          Payment?          @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  paymentOperation PaymentOperation? @relation(fields: [paymentOperationId], references: [id], onDelete: SetNull)
+  agent            Agent?            @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  device           Device?           @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  syncBatch        SyncBatch?        @relation(fields: [syncBatchId], references: [id], onDelete: SetNull)
+  syncItem         SyncItem?         @relation(fields: [syncItemId], references: [id], onDelete: SetNull)
+  resolver         User?             @relation("AnomalyResolvedBy", fields: [resolvedBy], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([severity])
+  @@index([type])
+  @@index([beneficiaryId])
+  @@index([paymentId])
+  @@index([paymentOperationId])
+  @@index([agentId])
+  @@index([deviceId])
+  @@index([syncBatchId])
+  @@index([syncItemId])
+  @@index([detectedAt])
+  @@map("anomalies")
+}
+
+// =============================================================================
+// REPORTS
+// =============================================================================
+
+// Tracks generated reports for traceability: who generated it, what
+// filters were used, and what output was produced.
+model Report {
+  id          String       @id @default(uuid())
+  reportType  ReportType   @map("report_type")
+  generatedBy String?      @map("generated_by")
+  filters     Json?
+  filePath    String?      @map("file_path")
+  format      ReportFormat @default(PDF)
+  status      ReportStatus @default(PENDING)
+  generatedAt DateTime?    @map("generated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  generator User? @relation(fields: [generatedBy], references: [id], onDelete: SetNull)
+
+  @@index([reportType])
+  @@index([status])
+  @@map("reports")
+}

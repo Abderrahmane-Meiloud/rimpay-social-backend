@@ -1,0 +1,33 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testRegex": "test/.*\\.e2e-spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "testTimeout": 60000,
+  "setupFiles": ["./test/validate-test-env.ts"],
+  "moduleNameMapper": {
+    "^(\\.{1,2}/.*)\\.(js)$": "$1"
+  },
+  "collectCoverageFrom": [
+    "src/payments/payments.service.ts",
+    "src/payment-operations/payment-operations.service.ts",
+    "src/sync/sync.service.ts",
+    "src/reports/**/*.ts",
+    "src/auth/guards/**/*.ts",
+    "src/auth/strategies/**/*.ts",
+    "!src/**/*.module.ts",
+    "!src/**/*.dto.ts",
+    "!src/**/*.interface.ts",
+    "!src/main.ts"
+  ],
+  "coverageDirectory": "coverage-e2e",
+  "coveragePathIgnorePatterns": [
+    "/node_modules/",
+    "/generated/",
+    "/test/",
+    "/dist/"
+  ]
+}
