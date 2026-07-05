@@ -8,9 +8,9 @@ import {
   RegionBeneficiaryDto,
   RegionPaymentDto,
 } from './dto/dashboard-summary-response.dto';
-import { computeExecutionRatePercent, MINISTERIAL_DEMO_CODE_PREFIX } from './execution-rate';
+import { computeExecutionRatePercent } from './execution-rate';
 
-export { computeExecutionRatePercent, MINISTERIAL_DEMO_CODE_PREFIX };
+export { computeExecutionRatePercent };
 
 export type DashboardPeriod =
   | 'LAST_3_MONTHS'
@@ -107,19 +107,10 @@ function sumDecimalStrings(values: string[]): string {
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getSummary(
-    period?: DashboardPeriod,
-    demoOnly = false,
-  ): Promise<DashboardSummaryResponseDto> {
-    const programWhere = demoOnly
-      ? { deletedAt: null, code: { startsWith: MINISTERIAL_DEMO_CODE_PREFIX } }
-      : { deletedAt: null };
-    const operationWhere = demoOnly
-      ? { deletedAt: null, code: { startsWith: MINISTERIAL_DEMO_CODE_PREFIX } }
-      : { deletedAt: null };
-    const paymentWhere = demoOnly
-      ? { paymentOperation: { code: { startsWith: MINISTERIAL_DEMO_CODE_PREFIX } } }
-      : {};
+  async getSummary(period?: DashboardPeriod): Promise<DashboardSummaryResponseDto> {
+    const programWhere = { deletedAt: null };
+    const operationWhere = { deletedAt: null };
+    const paymentWhere = {};
 
     const [
       beneficiariesTotal,
@@ -188,7 +179,7 @@ export class DashboardService {
     ]);
 
     const effectivePeriod = period ?? 'LAST_12_MONTHS';
-    const analytics = await this.computeAnalytics(effectivePeriod, demoOnly);
+    const analytics = await this.computeAnalytics(effectivePeriod);
 
     const totalAmountPaid = amountPaidRaw._sum.amount?.toString() ?? '0';
     const totalAmountPlanned = plannedAmountRaw._sum.plannedAmount?.toString() ?? '0';
@@ -239,14 +230,14 @@ export class DashboardService {
     };
   }
 
-  async computeAnalytics(period: DashboardPeriod, demoOnly = false): Promise<AnalyticsDto> {
+  async computeAnalytics(period: DashboardPeriod): Promise<AnalyticsDto> {
     const { start, end } = computePeriodRange(period);
 
     const [beneficiariesByRegion, paymentsByRegion, paymentsByMonthRaw] =
       await Promise.all([
         this.getBeneficiariesByRegion(),
-        this.getPaymentsByRegion(start, end, demoOnly),
-        this.getPaymentsByMonth(start, end, demoOnly),
+        this.getPaymentsByRegion(start, end),
+        this.getPaymentsByMonth(start, end),
       ]);
 
     const allMonths = generateMonthBuckets(start, end);
@@ -319,14 +310,7 @@ export class DashboardService {
     }));
   }
 
-  private async getPaymentsByRegion(
-    start: Date,
-    end: Date,
-    demoOnly = false,
-  ): Promise<RegionPaymentDto[]> {
-    const demoFilter = demoOnly
-      ? Prisma.sql`AND po.code LIKE ${MINISTERIAL_DEMO_CODE_PREFIX + '%'}`
-      : Prisma.empty;
+  private async getPaymentsByRegion(start: Date, end: Date): Promise<RegionPaymentDto[]> {
     const rows = await this.prisma.$queryRaw<
       {
         region_code: string | null;
@@ -350,7 +334,6 @@ export class DashboardService {
       WHERE p.status = 'PAID'
         AND p.paid_at >= ${start}
         AND p.paid_at <= ${end}
-        ${demoFilter}
       GROUP BY r.code, r.name
       ORDER BY cnt DESC
     `);
@@ -363,14 +346,7 @@ export class DashboardService {
     }));
   }
 
-  private async getPaymentsByMonth(
-    start: Date,
-    end: Date,
-    demoOnly = false,
-  ): Promise<MonthPaymentDto[]> {
-    const demoFilter = demoOnly
-      ? Prisma.sql`AND po.code LIKE ${MINISTERIAL_DEMO_CODE_PREFIX + '%'}`
-      : Prisma.empty;
+  private async getPaymentsByMonth(start: Date, end: Date): Promise<MonthPaymentDto[]> {
     const rows = await this.prisma.$queryRaw<
       { month: string; cnt: bigint; total: string | null }[]
     >(Prisma.sql`
@@ -384,7 +360,6 @@ export class DashboardService {
         AND p.paid_at IS NOT NULL
         AND p.paid_at >= ${start}
         AND p.paid_at <= ${end}
-        ${demoFilter}
       GROUP BY TO_CHAR(p.paid_at AT TIME ZONE 'UTC', 'YYYY-MM')
       ORDER BY month
     `);

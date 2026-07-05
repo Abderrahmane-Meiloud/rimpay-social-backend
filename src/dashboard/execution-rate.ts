@@ -11,6 +11,3 @@ export function computeExecutionRatePercent(paidAmount: number, plannedAmount: n
   const rate = (paidAmount / plannedAmount) * 100;
   return Math.round(Math.min(100, rate) * 100) / 100;
 }
-
-/** Ministerial demo dataset rows are namespaced under this code prefix. */
-export const MINISTERIAL_DEMO_CODE_PREFIX = 'MDEMO-';

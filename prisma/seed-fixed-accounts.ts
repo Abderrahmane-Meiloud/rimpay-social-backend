@@ -4,7 +4,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma/client';
 
 // ============================================================================
-// Fixed local/demo accounts (INSTITUTIONAL-RBAC-2).
+// Fixed institutional local accounts (INSTITUTIONAL-RBAC-2).
 //
 // Creates exactly three accounts, one per institutional web role:
 //   admin@taazor.mr      -> ADMIN_TAAZOUR
@@ -27,7 +27,7 @@ export function assertSafeToRun(): void {
   if (process.env.NODE_ENV === 'production') {
     throw new Error(
       'Refusing to run the fixed accounts seed: NODE_ENV=production. ' +
-        'This seed is for local/demo environments only.',
+        'This seed is for local/non-production environments only.',
     );
   }
 
@@ -73,8 +73,8 @@ export const fixedAccounts: FixedAccountDef[] = [
 // with no programme scope, or an OPERATOR user with no linked ACTIVE
 // operator, is otherwise locked out of the system by design — see
 // AuthService.isOperatorScopeValid and the beneficiaries/payments/
-// payment-operations row-level scoping). These are institutional fixtures,
-// not part of the fictional demo dataset under prisma/demo/.
+// payment-operations row-level scoping). These are real institutional
+// fixtures, not fictional/demo data.
 const FIXED_OPERATOR_CODE = 'TAAZOUR-FIXED-OPERATOR';
 const FIXED_PROGRAMME_CODE = 'TAAZOUR-FIXED-PROGRAMME';
 
