@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import * as bcrypt from 'bcrypt';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma/client';
 import { permissions } from './seed/data/permissions.data';
@@ -7,7 +6,11 @@ import { roles } from './seed/data/roles.data';
 import { geography } from './seed/data/geography.data';
 import { socialPrograms } from './seed/data/social-programs.data';
 
-const BCRYPT_COST = 12;
+// This is the reference-data seed only: permissions, roles, role-permission
+// links, geography, and base social programme records. It intentionally
+// creates no web user accounts — the three institutional fixed accounts
+// (ADMIN_TAAZOUR/PROGRAMME/OPERATOR) are created exclusively by
+// seed-fixed-accounts.ts, gated on DEMO_FIXED_ACCOUNTS=true.
 
 function assertNotProductionUnlessAllowed() {
   const isProduction = process.env.NODE_ENV === 'production';
@@ -104,64 +107,6 @@ async function seedRolePermissions(prisma: PrismaClient) {
   }
 
   return { linksEnsured };
-}
-
-async function seedAdminUser(prisma: PrismaClient) {
-  const email = process.env.SEED_ADMIN_EMAIL;
-  const password = process.env.SEED_ADMIN_PASSWORD;
-  const fullName = process.env.SEED_ADMIN_FULL_NAME;
-
-  if (!email || !password || !fullName) {
-    throw new Error(
-      'Missing required env vars for admin seed: SEED_ADMIN_EMAIL, SEED_ADMIN_PASSWORD, SEED_ADMIN_FULL_NAME must all be set.',
-    );
-  }
-
-  const existingUser = await prisma.user.findUnique({ where: { email } });
-
-  let user: { id: string };
-  let wasCreated = false;
-
-  if (existingUser) {
-    user = await prisma.user.update({
-      where: { email },
-      data: {
-        fullName,
-        status: 'ACTIVE',
-      },
-    });
-  } else {
-    const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
-    user = await prisma.user.create({
-      data: {
-        email,
-        passwordHash,
-        fullName,
-        status: 'ACTIVE',
-      },
-    });
-    wasCreated = true;
-  }
-
-  const adminRole = await prisma.role.findUniqueOrThrow({
-    where: { name: 'ADMIN_TAAZOUR' },
-  });
-
-  await prisma.userRole.upsert({
-    where: {
-      userId_roleId: {
-        userId: user.id,
-        roleId: adminRole.id,
-      },
-    },
-    update: {},
-    create: {
-      userId: user.id,
-      roleId: adminRole.id,
-    },
-  });
-
-  return { email, wasCreated };
 }
 
 async function seedGeography(prisma: PrismaClient) {
@@ -271,11 +216,6 @@ async function main() {
 
     const rolePermissionsResult = await seedRolePermissions(prisma);
     console.log(`Role-permission links ensured: ${rolePermissionsResult.linksEnsured}`);
-
-    const adminResult = await seedAdminUser(prisma);
-    console.log(
-      `Admin user ensured (${adminResult.email}): ${adminResult.wasCreated ? 'created' : 'already existed'}`,
-    );
 
     const geographyResult = await seedGeography(prisma);
     console.log(

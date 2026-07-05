@@ -5,10 +5,10 @@ export class SafeUserDto {
   @ApiProperty({ example: 'b3f1c1f0-1234-4abc-9def-1234567890ab' })
   id: string;
 
-  @ApiProperty({ example: 'admin@rimpay.local' })
+  @ApiProperty({ example: 'admin@taazor.mr' })
   email: string;
 
-  @ApiProperty({ example: 'System Administrator' })
+  @ApiProperty({ example: 'Administrateur TAAZOUR' })
   fullName: string;
 
   @ApiProperty({ enum: UserStatus, example: UserStatus.ACTIVE })
