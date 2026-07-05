@@ -4,7 +4,7 @@ import { randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '../generated/prisma/client';
+import { PrismaClient } from '../../generated/prisma/client';
 import {
   DEMO_CODE_PREFIX,
   DEMO_UNKNOWN_DEVICE_UID,
@@ -15,7 +15,7 @@ import {
   demoOperations,
   demoProgram,
   buildDemoBeneficiaries,
-} from './seed/ministerial-demo.data';
+} from './ministerial-demo.data';
 
 // Default location for the local, Git-ignored credentials file. This path
 // intentionally lives OUTSIDE any Git repository (backend/, frontend/, and
@@ -24,13 +24,14 @@ import {
 // accidentally staged or committed. Overridable only for tests, via
 // DEMO_CREDENTIALS_FILE_PATH.
 //
-// __dirname at runtime is backend/dist/prisma (compiled) or backend/prisma
-// (ts-node/ts-jest, since this file lives at backend/prisma/*.ts); the
-// workspace root is one level above backend/ either way.
+// __dirname at runtime is backend/dist/prisma/demo (compiled) or
+// backend/prisma/demo (ts-node/ts-jest, since this file lives at
+// backend/prisma/demo/*.ts); the workspace root is two levels above
+// backend/dist or backend/ either way.
 function resolveWorkspaceRoot(): string {
   const backendRoot = __dirname.includes(`${path.sep}dist${path.sep}`)
-    ? path.resolve(__dirname, '..', '..')
-    : path.resolve(__dirname, '..');
+    ? path.resolve(__dirname, '..', '..', '..')
+    : path.resolve(__dirname, '..', '..');
   return path.resolve(backendRoot, '..');
 }
 
@@ -171,6 +172,8 @@ async function seedDemoProgram(prisma: PrismaClient) {
       institution: demoProgram.institution,
       description: demoProgram.description,
       status: demoProgram.status,
+      startDate: new Date(demoProgram.startDate),
+      endDate: new Date(demoProgram.endDate),
     },
   });
 

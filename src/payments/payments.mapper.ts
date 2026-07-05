@@ -109,6 +109,7 @@ export function toPaymentDetail(
   row: PaymentDetailRow,
   validationSummary: PaymentValidationSummaryDto,
   anomalySummary: PaymentAnomalySummaryDto,
+  canViewSensitive: boolean,
 ): PaymentDetailDto {
   const locality = row.beneficiary.locality;
   const commune = locality.commune;
@@ -120,6 +121,7 @@ export function toPaymentDetail(
     amount: row.amount.toString(),
     status: row.status,
     syncStatus: row.syncStatus,
+    claimCode: row.claimCode,
     plannedAt: row.plannedAt,
     paidAt: row.paidAt,
     cancelledAt: row.cancelledAt,
@@ -129,7 +131,7 @@ export function toPaymentDetail(
       id: row.beneficiary.id,
       registryCode: row.beneficiary.registryCode,
       fullName: row.beneficiary.fullName,
-      nni: row.beneficiary.nni,
+      nni: canViewSensitive ? row.beneficiary.nni : null,
       status: row.beneficiary.status,
     },
     geography: {

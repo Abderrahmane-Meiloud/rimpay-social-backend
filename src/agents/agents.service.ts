@@ -12,6 +12,7 @@ import {
   Prisma,
 } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { OperatorsService } from '../operators/operators.service';
 import {
   buildPaginatedResponse,
   PaginatedResponseDto,
@@ -44,7 +45,10 @@ type GeoScope = {
 
 @Injectable()
 export class AgentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly operatorsService: OperatorsService,
+  ) {}
 
   async findAll(
     query: AgentQueryDto,
@@ -90,11 +94,17 @@ export class AgentsService {
     if (dto.employeeCode) {
       await this.assertEmployeeCodeFree(dto.employeeCode);
     }
+    if (dto.operatorId) {
+      await this.operatorsService.assertOperatorIsActive(dto.operatorId);
+    }
 
     const created = await this.prisma.$transaction(async (tx) => {
       const agent = await tx.agent.create({
         data: {
           user: { connect: { id: dto.userId } },
+          operator: dto.operatorId
+            ? { connect: { id: dto.operatorId } }
+            : undefined,
           phone: dto.phone ?? undefined,
           employeeCode: dto.employeeCode ?? undefined,
           status: AgentStatus.ACTIVE,
@@ -106,6 +116,7 @@ export class AgentsService {
         oldValues: Prisma.DbNull,
         newValues: {
           userId: dto.userId,
+          operatorId: dto.operatorId ?? null,
           phone: dto.phone ?? null,
           employeeCode: dto.employeeCode ?? null,
           status: AgentStatus.ACTIVE,
@@ -125,7 +136,13 @@ export class AgentsService {
   ): Promise<AgentDetailDto> {
     const existing = await this.prisma.agent.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true, phone: true, employeeCode: true, status: true },
+      select: {
+        id: true,
+        phone: true,
+        employeeCode: true,
+        status: true,
+        operatorId: true,
+      },
     });
     if (!existing) throw new NotFoundException('Agent not found');
 
@@ -135,11 +152,17 @@ export class AgentsService {
     ) {
       await this.assertEmployeeCodeFree(dto.employeeCode);
     }
+    if (dto.operatorId !== undefined && dto.operatorId !== existing.operatorId) {
+      await this.operatorsService.assertOperatorIsActive(dto.operatorId);
+    }
 
     const data: Prisma.AgentUpdateInput = {};
     if (dto.phone !== undefined) data.phone = dto.phone;
     if (dto.employeeCode !== undefined) data.employeeCode = dto.employeeCode;
     if (dto.status !== undefined) data.status = dto.status;
+    if (dto.operatorId !== undefined) {
+      data.operator = { connect: { id: dto.operatorId } };
+    }
 
     await this.prisma.$transaction(async (tx) => {
       await tx.agent.update({ where: { id }, data });
@@ -149,11 +172,13 @@ export class AgentsService {
           phone: existing.phone,
           employeeCode: existing.employeeCode,
           status: existing.status,
+          operatorId: existing.operatorId,
         },
         newValues: {
           phone: dto.phone ?? existing.phone,
           employeeCode: dto.employeeCode ?? existing.employeeCode,
           status: dto.status ?? existing.status,
+          operatorId: dto.operatorId ?? existing.operatorId,
         },
       });
     });

@@ -10,10 +10,12 @@ export interface PermissionSeed {
 
 export const permissions: PermissionSeed[] = [
   // Beneficiaries
-  { code: 'beneficiaries.read', description: 'View beneficiaries', group: 'beneficiaries' },
+  { code: 'beneficiaries.read', description: 'View beneficiaries (sensitive identity fields such as NNI masked unless beneficiaries.read_sensitive is also held)', group: 'beneficiaries' },
+  { code: 'beneficiaries.read_sensitive', description: 'View complete sensitive identity data (e.g. NNI) on beneficiaries', group: 'beneficiaries' },
   { code: 'beneficiaries.create', description: 'Create beneficiaries', group: 'beneficiaries' },
   { code: 'beneficiaries.update', description: 'Update beneficiaries', group: 'beneficiaries' },
   { code: 'beneficiaries.delete', description: 'Deactivate/remove beneficiaries', group: 'beneficiaries' },
+  { code: 'beneficiaries.import', description: 'Bulk import beneficiaries/citizen registry data (ADMIN_TAAZOUR only)', group: 'beneficiaries' },
 
   // Geography
   { code: 'geography.read', description: 'View geographic reference data', group: 'geography' },
@@ -30,6 +32,12 @@ export const permissions: PermissionSeed[] = [
   { code: 'operations.update', description: 'Update payment operations', group: 'operations' },
   { code: 'operations.open', description: 'Open a payment operation', group: 'operations' },
   { code: 'operations.close', description: 'Close a payment operation', group: 'operations' },
+
+  // Operators
+  { code: 'operators.read', description: 'View payment/distribution operators', group: 'operators' },
+  { code: 'operators.create', description: 'Create payment/distribution operators', group: 'operators' },
+  { code: 'operators.update', description: 'Update payment/distribution operators', group: 'operators' },
+  { code: 'operators.manage_status', description: 'Change operator status (active/inactive/suspended)', group: 'operators' },
 
   // Agents / Devices
   { code: 'agents.read', description: 'View field agents', group: 'agents' },

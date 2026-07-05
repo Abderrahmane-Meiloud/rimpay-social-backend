@@ -202,6 +202,13 @@ export class PaymentDetailDto {
   @ApiProperty({ enum: SyncStatus })
   syncStatus: SyncStatus;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'CLM-7F2K9-QX3ZP',
+    description: 'Server-generated unique claim code for this distribution instance.',
+  })
+  claimCode: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   plannedAt: Date | null;
 

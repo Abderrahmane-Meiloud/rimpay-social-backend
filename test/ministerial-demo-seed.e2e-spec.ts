@@ -9,8 +9,8 @@ import {
   assertSafeToRun,
   runMinisterialDemoSeed,
   writeCredentialsFileIfEnabled,
-} from '../prisma/seed-ministerial-demo';
-import { DEMO_CODE_PREFIX } from '../prisma/seed/ministerial-demo.data';
+} from '../prisma/demo/seed-ministerial-demo';
+import { DEMO_CODE_PREFIX } from '../prisma/demo/ministerial-demo.data';
 
 /**
  * Proves the ministerial demo seed's safety gates, idempotency, required
@@ -110,7 +110,7 @@ describe('writeCredentialsFileIfEnabled (unit, no database access)', () => {
   });
 
   const fictionalCredentials = [
-    { email: 'demo.unit-test@demo.rimpay.local', role: 'ADMIN', password: 'Fictional#Test1234!' },
+    { email: 'demo.unit-test@demo.rimpay.local', role: 'ADMIN_TAAZOUR', password: 'Fictional#Test1234!' },
   ];
 
   it('does nothing when DEMO_CREDENTIALS_FILE is not "true"', () => {

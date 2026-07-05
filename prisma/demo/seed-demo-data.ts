@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '../generated/prisma/client';
+import { PrismaClient } from '../../generated/prisma/client';
 
 const BCRYPT_COST = 12;
 const DEMO_PREFIX = 'DEMO';
@@ -11,7 +11,7 @@ const DEMO_PREFIX = 'DEMO';
 // ---------------------------------------------------------------------------
 
 async function count(prisma: PrismaClient) {
-  const [b, o, p, a, an, au, d, u] = await Promise.all([
+  const [b, o, p, a, an, au, d, u, op] = await Promise.all([
     prisma.beneficiary.count(),
     prisma.paymentOperation.count(),
     prisma.payment.count(),
@@ -20,8 +20,9 @@ async function count(prisma: PrismaClient) {
     prisma.auditLog.count(),
     prisma.device.count(),
     prisma.user.count(),
+    prisma.operator.count(),
   ]);
-  return { beneficiaries: b, operations: o, payments: p, agents: a, anomalies: an, auditLogs: au, devices: d, users: u };
+  return { beneficiaries: b, operations: o, payments: p, agents: a, anomalies: an, auditLogs: au, devices: d, users: u, operators: op };
 }
 
 // ---------------------------------------------------------------------------
@@ -162,11 +163,11 @@ async function seedDemoGeography(prisma: PrismaClient) {
 // ---------------------------------------------------------------------------
 
 const demoPrograms = [
-  { code: 'DEMO-TSR', name: 'Transfert social régulier', type: 'CASH_TRANSFER', institution: 'PNRSCS', description: 'Programme de transferts monétaires réguliers aux ménages vulnérables', status: 'ACTIVE' as const },
-  { code: 'DEMO-AAU', name: "Appui alimentaire d'urgence", type: 'EMERGENCY_RELIEF', institution: 'Taazour', description: "Assistance alimentaire d'urgence pour les populations affectées", status: 'ACTIVE' as const },
-  { code: 'DEMO-AS', name: 'Assistance scolaire', type: 'EDUCATION', institution: 'PNRSCS', description: "Soutien financier pour la scolarisation des enfants des ménages pauvres", status: 'ACTIVE' as const },
-  { code: 'DEMO-SMV', name: 'Soutien ménages vulnérables', type: 'SOCIAL_PROTECTION', institution: 'Taazour', description: 'Aide directe aux ménages identifiés comme vulnérables par le registre social', status: 'DRAFT' as const },
-  { code: 'DEMO-PP', name: 'Programme pilote PNRSCS', type: 'PILOT', institution: 'PNRSCS', description: 'Programme pilote de démonstration de la plateforme nationale', status: 'ACTIVE' as const },
+  { code: 'DEMO-TSR', name: 'Transfert social régulier', type: 'CASH_TRANSFER', institution: 'PNRSCS', description: 'Programme de transferts monétaires réguliers aux ménages vulnérables', status: 'ACTIVE' as const, startDate: '2026-01-01', endDate: '2027-12-31' },
+  { code: 'DEMO-AAU', name: "Appui alimentaire d'urgence", type: 'EMERGENCY_RELIEF', institution: 'Taazour', description: "Assistance alimentaire d'urgence pour les populations affectées", status: 'ACTIVE' as const, startDate: '2026-01-01', endDate: '2026-12-31' },
+  { code: 'DEMO-AS', name: 'Assistance scolaire', type: 'EDUCATION', institution: 'PNRSCS', description: "Soutien financier pour la scolarisation des enfants des ménages pauvres", status: 'ACTIVE' as const, startDate: '2026-01-01', endDate: '2026-12-31' },
+  { code: 'DEMO-SMV', name: 'Soutien ménages vulnérables', type: 'SOCIAL_PROTECTION', institution: 'Taazour', description: 'Aide directe aux ménages identifiés comme vulnérables par le registre social', status: 'DRAFT' as const, startDate: '2026-01-01', endDate: '2027-12-31' },
+  { code: 'DEMO-PP', name: 'Programme pilote PNRSCS', type: 'PILOT', institution: 'PNRSCS', description: 'Programme pilote de démonstration de la plateforme nationale', status: 'ACTIVE' as const, startDate: '2026-01-01', endDate: '2026-12-31' },
 ];
 
 async function seedDemoPrograms(prisma: PrismaClient) {
@@ -178,7 +179,16 @@ async function seedDemoPrograms(prisma: PrismaClient) {
     const record = await prisma.socialProgram.upsert({
       where: { code: p.code },
       update: { name: p.name, type: p.type, institution: p.institution, description: p.description, status: p.status },
-      create: { code: p.code, name: p.name, type: p.type, institution: p.institution, description: p.description, status: p.status },
+      create: {
+        code: p.code,
+        name: p.name,
+        type: p.type,
+        institution: p.institution,
+        description: p.description,
+        status: p.status,
+        startDate: new Date(p.startDate),
+        endDate: new Date(p.endDate),
+      },
     });
     programIds.push(record.id);
     if (!existing) created++;
@@ -281,6 +291,43 @@ async function seedDemoBeneficiaries(prisma: PrismaClient, localityIds: string[]
 }
 
 // ---------------------------------------------------------------------------
+// Demo operators
+// ---------------------------------------------------------------------------
+// Fictional payment/distribution operators for demonstration purposes only.
+// No real company data, no real phone numbers.
+
+const demoOperators = [
+  { name: 'Opérateur Démonstration Nord', code: 'DEMO-OPR-NORD', type: 'DISTRIBUTION' },
+  { name: 'Opérateur Démonstration Sud', code: 'DEMO-OPR-SUD', type: 'DISTRIBUTION' },
+];
+
+async function seedDemoOperators(prisma: PrismaClient) {
+  let created = 0;
+  const operatorIds: string[] = [];
+
+  for (const o of demoOperators) {
+    const existing = await prisma.operator.findUnique({ where: { code: o.code } });
+    if (existing) {
+      operatorIds.push(existing.id);
+      continue;
+    }
+
+    const operator = await prisma.operator.create({
+      data: {
+        name: o.name,
+        code: o.code,
+        type: o.type,
+        status: 'ACTIVE',
+      },
+    });
+    operatorIds.push(operator.id);
+    created++;
+  }
+
+  return { created, operatorIds };
+}
+
+// ---------------------------------------------------------------------------
 // Demo agents
 // ---------------------------------------------------------------------------
 
@@ -295,14 +342,14 @@ const agentNames = [
   { name: 'Superviseur Demo Sud', code: 'DEMO-AGT-008', email: 'sup.demo2@rimpay.local', phone: '+222 99 80 08 08' },
 ];
 
-async function seedDemoAgents(prisma: PrismaClient) {
+async function seedDemoAgents(prisma: PrismaClient, operatorIds: string[]) {
   let created = 0;
   const agentIds: string[] = [];
   const deviceIds: string[] = [];
 
   const agentRole = await prisma.role.findUnique({ where: { name: 'AGENT' } });
 
-  for (const a of agentNames) {
+  for (const [index, a] of agentNames.entries()) {
     const existingAgent = await prisma.agent.findUnique({ where: { employeeCode: a.code } });
     if (existingAgent) {
       agentIds.push(existingAgent.id);
@@ -329,9 +376,15 @@ async function seedDemoAgents(prisma: PrismaClient) {
       });
     }
 
+    // Distribute demo agents evenly across the fictional demo operators.
+    const operatorId = operatorIds.length > 0
+      ? operatorIds[index % operatorIds.length]
+      : undefined;
+
     const agent = await prisma.agent.create({
       data: {
         userId: user.id,
+        operatorId,
         phone: a.phone,
         employeeCode: a.code,
         status: 'ACTIVE',
@@ -649,27 +702,31 @@ async function main() {
     const progs = await seedDemoPrograms(prisma);
     console.log(`Programs: ${progs.created} created (${demoPrograms.length} ensured)`);
 
-    // 3. Agents
-    const agents = await seedDemoAgents(prisma);
+    // 3. Operators
+    const operators = await seedDemoOperators(prisma);
+    console.log(`Operators: ${operators.created} created (${demoOperators.length} ensured)`);
+
+    // 4. Agents
+    const agents = await seedDemoAgents(prisma, operators.operatorIds);
     console.log(`Agents: ${agents.created} created (${agentNames.length} ensured)`);
 
-    // 4. Beneficiaries
+    // 5. Beneficiaries
     const bens = await seedDemoBeneficiaries(prisma, geo.localityIds);
     console.log(`Beneficiaries: ${bens.created} created (50 ensured)`);
 
-    // 5. Operations
+    // 6. Operations
     const ops = await seedDemoOperations(prisma, progs.programIds);
     console.log(`Operations: ${ops.created} created (${demoOperations.length} ensured)`);
 
-    // 6. Payments
+    // 7. Payments
     const pays = await seedDemoPayments(prisma, ops.operationIds, bens.beneficiaryIds, agents.agentIds, agents.deviceIds);
     console.log(`Payments: ${pays.paymentsCreated} created, ${pays.pobCreated} beneficiary assignments created`);
 
-    // 7. Anomalies
+    // 8. Anomalies
     const anos = await seedDemoAnomalies(prisma, bens.beneficiaryIds, ops.operationIds, agents.agentIds, agents.deviceIds);
     console.log(`Anomalies: ${anos.created} created (${demoAnomalies.length} ensured)`);
 
-    // 8. Audit logs
+    // 9. Audit logs
     const adminUser = await prisma.user.findUnique({ where: { email: 'admin@rimpay.local' } });
     const auditResult = await seedDemoAuditLogs(prisma, adminUser?.id || null);
     console.log(`Audit logs: ${auditResult.created} demo entries added`);

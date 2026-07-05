@@ -17,11 +17,11 @@ export class ProgramListItemDto {
   @ApiProperty({ enum: SocialProgramStatus })
   status: SocialProgramStatus;
 
-  @ApiPropertyOptional({ nullable: true })
-  startDate: Date | null;
+  @ApiProperty()
+  startDate: Date;
 
-  @ApiPropertyOptional({ nullable: true })
-  endDate: Date | null;
+  @ApiProperty()
+  endDate: Date;
 
   @ApiProperty({ example: 3 })
   operationsCount: number;

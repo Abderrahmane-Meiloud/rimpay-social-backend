@@ -39,6 +39,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Unauthorized');
     }
 
+    if (!this.authService.isOperatorScopeValid(user)) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+
     const active = await this.sessionService.isSessionActive(
       payload.sid,
       user.id,

@@ -51,8 +51,11 @@ export class PaymentOperationsController {
   @ApiOperation({ summary: 'List payment operations with pagination and filters' })
   @ApiResponse({ status: 200, type: PaginatedOperationsDto })
   @ApiForbiddenResponse({ description: 'Insufficient permissions' })
-  findAll(@Query() query: PaymentOperationQueryDto) {
-    return this.paymentOperationsService.findAll(query);
+  findAll(
+    @Query() query: PaymentOperationQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.paymentOperationsService.findAll(query, user);
   }
 
   @Get(':id')
@@ -61,8 +64,11 @@ export class PaymentOperationsController {
   @ApiResponse({ status: 200, type: OperationDetailDto })
   @ApiResponse({ status: 404, description: 'Operation not found' })
   @ApiForbiddenResponse({ description: 'Insufficient permissions' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.paymentOperationsService.findOne(id);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.paymentOperationsService.findOne(id, user);
   }
 
   @Post()

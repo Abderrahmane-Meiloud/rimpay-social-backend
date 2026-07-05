@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -71,6 +72,7 @@ export class ProgramsService {
     currentUserId: string,
   ): Promise<ProgramDetailDto> {
     await this.assertCodeIsFree(dto.code);
+    this.validateDateRange(dto.startDate, dto.endDate);
 
     const created = await this.prisma.$transaction(async (tx) => {
       const program = await tx.socialProgram.create({
@@ -80,8 +82,8 @@ export class ProgramsService {
           type: dto.type,
           institution: dto.institution,
           description: dto.description,
-          startDate: dto.startDate ? new Date(dto.startDate) : undefined,
-          endDate: dto.endDate ? new Date(dto.endDate) : undefined,
+          startDate: new Date(dto.startDate),
+          endDate: new Date(dto.endDate),
           budgetAmount: dto.budgetAmount ?? undefined,
           status: dto.status ?? SocialProgramStatus.DRAFT,
         },
@@ -110,15 +112,19 @@ export class ProgramsService {
       throw new NotFoundException('Program not found');
     }
 
+    const nextStartDate = dto.startDate ?? existing.startDate.toISOString();
+    const nextEndDate = dto.endDate ?? existing.endDate.toISOString();
+    if (dto.startDate !== undefined || dto.endDate !== undefined) {
+      this.validateDateRange(nextStartDate, nextEndDate);
+    }
+
     const data: Prisma.SocialProgramUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.type !== undefined) data.type = dto.type;
     if (dto.institution !== undefined) data.institution = dto.institution;
     if (dto.description !== undefined) data.description = dto.description;
-    if (dto.startDate !== undefined)
-      data.startDate = dto.startDate ? new Date(dto.startDate) : null;
-    if (dto.endDate !== undefined)
-      data.endDate = dto.endDate ? new Date(dto.endDate) : null;
+    if (dto.startDate !== undefined) data.startDate = new Date(dto.startDate);
+    if (dto.endDate !== undefined) data.endDate = new Date(dto.endDate);
     if (dto.budgetAmount !== undefined) data.budgetAmount = dto.budgetAmount;
     if (dto.status !== undefined) data.status = dto.status;
 
@@ -165,6 +171,13 @@ export class ProgramsService {
     });
     if (existing) {
       throw new ConflictException('code already exists');
+    }
+  }
+
+  // endDate may equal startDate (a single-day programme is valid).
+  private validateDateRange(startDate: string, endDate: string): void {
+    if (new Date(endDate) < new Date(startDate)) {
+      throw new BadRequestException('endDate must be after or equal to startDate');
     }
   }
 

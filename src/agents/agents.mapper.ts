@@ -11,6 +11,7 @@ const geoSelect = { id: true, name: true, code: true } as const;
 
 export const agentListInclude = {
   user: { select: { id: true, fullName: true, email: true, status: true } },
+  operator: { select: { id: true, name: true, code: true, status: true } },
   _count: { select: { devices: { where: { deletedAt: null } } } },
 } satisfies Prisma.AgentInclude;
 
@@ -20,6 +21,7 @@ export type AgentListRow = Prisma.AgentGetPayload<{
 
 export const agentDetailInclude = {
   user: { select: { id: true, fullName: true, email: true, status: true } },
+  operator: { select: { id: true, name: true, code: true, status: true } },
   devices: {
     where: { deletedAt: null },
     select: {
@@ -55,6 +57,7 @@ export function toAgentListItem(row: AgentListRow): AgentListItemDto {
     phone: row.phone,
     status: row.status,
     user: row.user ?? null,
+    operator: row.operator ?? null,
     devicesCount: row._count.devices,
     createdAt: row.createdAt,
   };
@@ -93,6 +96,7 @@ export function toAgentDetail(
     phone: row.phone,
     status: row.status,
     user: row.user ?? null,
+    operator: row.operator ?? null,
     devicesCount: row.devices.length,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

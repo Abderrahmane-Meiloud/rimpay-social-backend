@@ -40,8 +40,9 @@ export class PaymentOperationPaymentsController {
   findAllForOperation(
     @Param('id', ParseUUIDPipe) id: string,
     @Query() query: PaymentQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.paymentsService.findAllForOperation(id, query);
+    return this.paymentsService.findAllForOperation(id, query, user);
   }
 
   @Post('generate')

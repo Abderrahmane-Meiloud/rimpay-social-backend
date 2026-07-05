@@ -25,9 +25,11 @@ import { BeneficiariesService } from './beneficiaries.service';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 import { BeneficiaryQueryDto } from './dto/beneficiary-query.dto';
+import { ImportBeneficiariesDto } from './dto/import-beneficiaries.dto';
 import {
   BeneficiaryDetailDto,
   BeneficiaryMutationResponseDto,
+  ImportBeneficiariesResponseDto,
   PaginatedBeneficiariesDto,
 } from './dto/beneficiary-response.dto';
 
@@ -42,8 +44,11 @@ export class BeneficiariesController {
   @ApiOperation({ summary: 'List beneficiaries with pagination and filters' })
   @ApiResponse({ status: 200, type: PaginatedBeneficiariesDto })
   @ApiForbiddenResponse({ description: 'Insufficient permissions' })
-  findAll(@Query() query: BeneficiaryQueryDto) {
-    return this.beneficiariesService.findAll(query);
+  findAll(
+    @Query() query: BeneficiaryQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.beneficiariesService.findAll(query, user);
   }
 
   @Get(':id')
@@ -52,8 +57,11 @@ export class BeneficiariesController {
   @ApiResponse({ status: 200, type: BeneficiaryDetailDto })
   @ApiResponse({ status: 404, description: 'Beneficiary not found' })
   @ApiForbiddenResponse({ description: 'Insufficient permissions' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.beneficiariesService.findOne(id);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.beneficiariesService.findOne(id, user);
   }
 
   @Post()
@@ -67,7 +75,22 @@ export class BeneficiariesController {
     @Body() dto: CreateBeneficiaryDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.beneficiariesService.create(dto, user.id);
+    return this.beneficiariesService.create(dto, user);
+  }
+
+  @Post('import')
+  @RequirePermissions('beneficiaries.import')
+  @ApiOperation({
+    summary:
+      'Bulk import beneficiaries (ADMIN_TAAZOUR only). Duplicate registryCode/nni rows are skipped, not overwritten.',
+  })
+  @ApiResponse({ status: 201, type: ImportBeneficiariesResponseDto })
+  @ApiForbiddenResponse({ description: 'Insufficient permissions' })
+  importMany(
+    @Body() dto: ImportBeneficiariesDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.beneficiariesService.importMany(dto, user);
   }
 
   @Patch(':id')
@@ -82,7 +105,7 @@ export class BeneficiariesController {
     @Body() dto: UpdateBeneficiaryDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.beneficiariesService.update(id, dto, user.id);
+    return this.beneficiariesService.update(id, dto, user);
   }
 
   @Delete(':id')

@@ -62,7 +62,7 @@ describe('Rate Limiting (P0)', () => {
     const token = await jwtService.signAsync({
       sub: fixtures.users.admin.id,
       email: fixtures.users.admin.email,
-      roles: ['ADMIN'],
+      roles: ['ADMIN_TAAZOUR'],
       sid: sessionId,
       av: 0,
     });
@@ -88,7 +88,7 @@ describe('Rate Limiting (P0)', () => {
       const token = await jwtService.signAsync({
         sub: fixtures.users.admin.id,
         email: fixtures.users.admin.email,
-        roles: ['ADMIN'],
+        roles: ['ADMIN_TAAZOUR'],
         sid: sessionId,
         av: 0,
       });

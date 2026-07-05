@@ -13,6 +13,13 @@ import {
 // Geography scope changes are allowed but still subject to the one-scope rule
 // and the DRAFT/SUSPENDED editability guard enforced in the service.
 export class UpdatePaymentOperationDto {
+  @ApiPropertyOptional({
+    description: 'Operator assigned to execute this operation. Must exist and be ACTIVE.',
+  })
+  @IsOptional()
+  @IsUUID()
+  operatorId?: string;
+
   @ApiPropertyOptional({ example: 'OP-PNS-2026-Q1' })
   @IsOptional()
   @IsString()

@@ -11,6 +11,7 @@ import { ProgramsModule } from './programs/programs.module';
 import { PaymentOperationsModule } from './payment-operations/payment-operations.module';
 import { PaymentsModule } from './payments/payments.module';
 import { AgentsModule } from './agents/agents.module';
+import { OperatorsModule } from './operators/operators.module';
 import { DevicesModule } from './devices/devices.module';
 import { SyncModule } from './sync/sync.module';
 import { HealthModule } from './health/health.module';
@@ -35,6 +36,7 @@ import { GeographyModule } from './geography/geography.module';
     PaymentOperationsModule,
     PaymentsModule,
     AgentsModule,
+    OperatorsModule,
     DevicesModule,
     SyncModule,
     AnomaliesModule,

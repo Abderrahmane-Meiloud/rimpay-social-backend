@@ -71,6 +71,12 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 *.sqlite
 *.sqlite3
 
+# Prisma migrations are source-controlled schema history, not database
+# dumps/backups: explicitly un-ignore them despite the broad *.sql rule above.
+!prisma/migrations/
+!prisma/migrations/**/
+!prisma/migrations/**/migration.sql
+
 # Local ministerial demo credentials file (never committed; see
 # MINISTERIAL_DEMO_RUNBOOK.md). Ignored here as defense-in-depth even
 # though the default path lives outside this repository entirely.

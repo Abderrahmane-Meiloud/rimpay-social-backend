@@ -12,6 +12,7 @@ const geoSelect = { id: true, name: true, code: true } as const;
 
 export const operationListInclude = {
   socialProgram: { select: { id: true, name: true, code: true } },
+  operator: { select: { id: true, name: true, code: true } },
   region: { select: geoSelect },
   moughataa: { select: geoSelect },
   commune: { select: geoSelect },
@@ -59,6 +60,7 @@ export function toOperationListItem(
     paidAmount: row.paidAmount.toString(),
     executionRate: row.executionRate.toString(),
     socialProgram: row.socialProgram,
+    operator: row.operator ?? null,
     scope: buildScope(row),
     assignedBeneficiariesCount: row._count.operationBeneficiaries,
     createdAt: row.createdAt,

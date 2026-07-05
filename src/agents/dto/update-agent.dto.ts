@@ -1,8 +1,15 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { AgentStatus } from '../../../generated/prisma/client';
 
 export class UpdateAgentDto {
+  @ApiPropertyOptional({
+    description: 'Operator this agent is recruited/managed by. Must exist and be ACTIVE.',
+  })
+  @IsOptional()
+  @IsUUID()
+  operatorId?: string;
+
   @ApiPropertyOptional({ example: '+22222000000' })
   @IsOptional()
   @IsString()

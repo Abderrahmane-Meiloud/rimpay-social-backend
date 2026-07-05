@@ -6,10 +6,9 @@ import { AuthService } from '../src/auth/auth.service';
 
 export interface TokenSet {
   admin: string;
-  programManager: string;
-  supervisor: string;
+  programme: string;
+  operator: string;
   agent: string;
-  auditor: string;
 }
 
 async function createTokenFor(
@@ -40,19 +39,17 @@ export async function getTokens(
   app: INestApplication,
   users: {
     admin: { id: string; email: string; password: string };
-    programManager: { id: string; email: string; password: string };
-    supervisor: { id: string; email: string; password: string };
+    programme: { id: string; email: string; password: string };
+    operator: { id: string; email: string; password: string };
     agent: { id: string; email: string; password: string };
-    auditor: { id: string; email: string; password: string };
   },
 ): Promise<TokenSet> {
-  const [admin, programManager, supervisor, agent, auditor] = await Promise.all([
+  const [admin, programme, operator, agent] = await Promise.all([
     createTokenFor(app, users.admin.id),
-    createTokenFor(app, users.programManager.id),
-    createTokenFor(app, users.supervisor.id),
+    createTokenFor(app, users.programme.id),
+    createTokenFor(app, users.operator.id),
     createTokenFor(app, users.agent.id),
-    createTokenFor(app, users.auditor.id),
   ]);
 
-  return { admin, programManager, supervisor, agent, auditor };
+  return { admin, programme, operator, agent };
 }

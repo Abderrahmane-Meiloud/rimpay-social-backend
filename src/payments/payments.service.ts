@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import {
   AgentStatus,
   AuditSource,
@@ -17,6 +18,7 @@ import {
 } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AnomalyDetectionService } from '../anomalies/anomaly-detection.service';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import {
   buildPaginatedResponse,
   PaginatedResponseDto,
@@ -55,8 +57,9 @@ export class PaymentsService {
 
   async findAll(
     query: PaymentQueryDto,
+    currentUser: AuthenticatedUser,
   ): Promise<PaginatedResponseDto<PaymentListItemDto>> {
-    const where = this.buildWhere(query);
+    const where = this.buildWhere(query, currentUser);
 
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.payment.findMany({
@@ -80,6 +83,7 @@ export class PaymentsService {
   async findAllForOperation(
     operationId: string,
     query: PaymentQueryDto,
+    currentUser: AuthenticatedUser,
   ): Promise<PaginatedResponseDto<PaymentListItemDto>> {
     const operation = await this.prisma.paymentOperation.findFirst({
       where: { id: operationId, deletedAt: null },
@@ -90,12 +94,19 @@ export class PaymentsService {
     }
 
     // Force the operation id from the path, ignoring any conflicting query value.
-    return this.findAll({ ...query, paymentOperationId: operationId });
+    return this.findAll(
+      { ...query, paymentOperationId: operationId },
+      currentUser,
+    );
   }
 
-  async findOne(id: string): Promise<PaymentDetailDto> {
-    const row = await this.prisma.payment.findUnique({
-      where: { id },
+  async findOne(
+    id: string,
+    currentUser: AuthenticatedUser,
+  ): Promise<PaymentDetailDto> {
+    const scopeFilter = this.buildScopeFilter(currentUser);
+    const row = await this.prisma.payment.findFirst({
+      where: scopeFilter ? { id, AND: [scopeFilter] } : { id },
       include: paymentDetailInclude,
     });
     if (!row) {
@@ -107,7 +118,12 @@ export class PaymentsService {
       this.getAnomalySummary(id),
     ]);
 
-    return toPaymentDetail(row, validationSummary, anomalySummary);
+    return toPaymentDetail(
+      row,
+      validationSummary,
+      anomalySummary,
+      this.canViewSensitive(currentUser),
+    );
   }
 
   async generate(
@@ -171,6 +187,7 @@ export class PaymentsService {
 
       try {
         await this.prisma.$transaction(async (tx) => {
+          const claimCode = await this.resolveUniqueClaimCode(tx);
           const payment = await tx.payment.create({
             data: {
               paymentOperationId: operationId,
@@ -178,6 +195,7 @@ export class PaymentsService {
               amount,
               status: PaymentStatus.PENDING,
               plannedAt,
+              claimCode,
             },
             select: { id: true },
           });
@@ -546,8 +564,9 @@ export class PaymentsService {
   async cancel(
     id: string,
     dto: CancelPaymentDto,
-    currentUserId: string,
+    currentUser: AuthenticatedUser,
   ): Promise<PaymentDetailDto> {
+    const currentUserId = currentUser.id;
     await this.prisma.$transaction(async (tx) => {
       const existing = await tx.payment.findUnique({
         where: { id },
@@ -616,16 +635,22 @@ export class PaymentsService {
       });
     });
 
-    return this.findOne(id);
+    return this.findOne(id, currentUser);
   }
 
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
 
-  private buildWhere(query: PaymentQueryDto): Prisma.PaymentWhereInput {
+  private buildWhere(
+    query: PaymentQueryDto,
+    currentUser: AuthenticatedUser,
+  ): Prisma.PaymentWhereInput {
     const where: Prisma.PaymentWhereInput = {};
     const and: Prisma.PaymentWhereInput[] = [];
+
+    const scopeFilter = this.buildScopeFilter(currentUser);
+    if (scopeFilter) and.push(scopeFilter);
 
     if (query.search) {
       and.push({
@@ -673,6 +698,71 @@ export class PaymentsService {
 
     if (and.length > 0) where.AND = and;
     return where;
+  }
+
+  // Institutional scoping (INSTITUTIONAL-RBAC-2):
+  // - ADMIN_TAAZOUR: unrestricted.
+  // - PROGRAMME: only payments belonging to an operation of a scoped programme.
+  // - OPERATOR: only payments belonging to an operation assigned to that operator.
+  // A PROGRAMME/OPERATOR user with no scope configured sees zero rows.
+  private buildScopeFilter(
+    currentUser: AuthenticatedUser,
+  ): Prisma.PaymentWhereInput | null {
+    if (currentUser.roles.includes('ADMIN_TAAZOUR')) {
+      return null;
+    }
+
+    if (currentUser.roles.includes('PROGRAMME')) {
+      return {
+        paymentOperation: {
+          socialProgramId: { in: currentUser.programmeIds },
+        },
+      };
+    }
+
+    if (currentUser.roles.includes('OPERATOR')) {
+      if (!currentUser.operatorId) {
+        return { id: '' };
+      }
+      return { paymentOperation: { operatorId: currentUser.operatorId } };
+    }
+
+    return { id: '' };
+  }
+
+  private canViewSensitive(currentUser: AuthenticatedUser): boolean {
+    return currentUser.permissions.includes('beneficiaries.read_sensitive');
+  }
+
+  // Server-generated, cryptographically random claim code — never derived
+  // from NNI, phone, or any other beneficiary-identifying data, and not
+  // guessable from a payment/beneficiary id. Retries on the (very unlikely)
+  // event of a collision against the unique constraint.
+  private async resolveUniqueClaimCode(
+    tx: Prisma.TransactionClient,
+  ): Promise<string> {
+    const MAX_RETRIES = 5;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      const candidate = this.generateClaimCode();
+      const existing = await tx.payment.findUnique({
+        where: { claimCode: candidate },
+        select: { id: true },
+      });
+      if (!existing) {
+        return candidate;
+      }
+    }
+    throw new ConflictException(
+      'Could not generate a unique claim code, please retry',
+    );
+  }
+
+  private generateClaimCode(): string {
+    // 10 random base32-ish uppercase alphanumeric characters, grouped for
+    // readability (e.g. CLM-7F2K9-QX3ZP). Purely random: no timestamp, no
+    // sequential component, no beneficiary/payment data.
+    const raw = randomBytes(8).toString('hex').toUpperCase().slice(0, 10);
+    return `CLM-${raw.slice(0, 5)}-${raw.slice(5, 10)}`;
   }
 
   private async getValidationSummary(

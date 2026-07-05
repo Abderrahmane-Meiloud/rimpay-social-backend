@@ -5,7 +5,7 @@ export class MeResponseDto {
   @ApiProperty({ type: SafeUserDto })
   user: SafeUserDto;
 
-  @ApiProperty({ type: [String], example: ['ADMIN'] })
+  @ApiProperty({ type: [String], example: ['ADMIN_TAAZOUR'] })
   roles: string[];
 
   @ApiProperty({

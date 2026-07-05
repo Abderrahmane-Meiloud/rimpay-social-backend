@@ -14,6 +14,8 @@ import {
   Prisma,
 } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { OperatorsService } from '../operators/operators.service';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import {
   buildPaginatedResponse,
   PaginatedResponseDto,
@@ -57,12 +59,16 @@ type GeoScope = {
 
 @Injectable()
 export class PaymentOperationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly operatorsService: OperatorsService,
+  ) {}
 
   async findAll(
     query: PaymentOperationQueryDto,
+    currentUser?: AuthenticatedUser,
   ): Promise<PaginatedResponseDto<OperationListItemDto>> {
-    const where = this.buildWhere(query);
+    const where = this.buildWhere(query, currentUser);
 
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.paymentOperation.findMany({
@@ -83,9 +89,17 @@ export class PaymentOperationsService {
     );
   }
 
-  async findOne(id: string): Promise<OperationDetailDto> {
+  async findOne(
+    id: string,
+    currentUser?: AuthenticatedUser,
+  ): Promise<OperationDetailDto> {
+    const scopeFilter = currentUser
+      ? this.buildScopeFilter(currentUser)
+      : null;
     const row = await this.prisma.paymentOperation.findFirst({
-      where: { id, deletedAt: null },
+      where: scopeFilter
+        ? { id, deletedAt: null, AND: [scopeFilter] }
+        : { id, deletedAt: null },
       include: operationListInclude,
     });
     if (!row) {
@@ -109,11 +123,15 @@ export class PaymentOperationsService {
     this.validateDateRange(dto.startDate, dto.endDate);
     const scope = this.validateScope(dto);
     await this.assertScopeExists(scope);
+    if (dto.operatorId) {
+      await this.operatorsService.assertOperatorIsActive(dto.operatorId);
+    }
 
     const created = await this.prisma.$transaction(async (tx) => {
       const operation = await tx.paymentOperation.create({
         data: {
           socialProgramId: dto.socialProgramId,
+          operatorId: dto.operatorId ?? undefined,
           name: dto.name,
           code: dto.code,
           period: dto.period,
@@ -159,7 +177,14 @@ export class PaymentOperationsService {
 
     this.validateDateRange(dto.startDate, dto.endDate);
 
+    if (dto.operatorId !== undefined && dto.operatorId !== existing.operatorId) {
+      await this.operatorsService.assertOperatorIsActive(dto.operatorId);
+    }
+
     const data: Prisma.PaymentOperationUpdateInput = {};
+    if (dto.operatorId !== undefined) {
+      data.operator = { connect: { id: dto.operatorId } };
+    }
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.period !== undefined) data.period = dto.period;
     if (dto.plannedAmount !== undefined) data.plannedAmount = dto.plannedAmount;
@@ -695,6 +720,7 @@ export class PaymentOperationsService {
 
   private buildWhere(
     query: PaymentOperationQueryDto,
+    currentUser?: AuthenticatedUser,
   ): Prisma.PaymentOperationWhereInput {
     const where: Prisma.PaymentOperationWhereInput = { deletedAt: null };
     const and: Prisma.PaymentOperationWhereInput[] = [];
@@ -723,8 +749,33 @@ export class PaymentOperationsService {
       and.push({ startDate });
     }
 
+    if (currentUser) {
+      const scopeFilter = this.buildScopeFilter(currentUser);
+      if (scopeFilter) and.push(scopeFilter);
+    }
+
     if (and.length > 0) where.AND = and;
     return where;
+  }
+
+  // Institutional scoping (INSTITUTIONAL-RBAC-2), read paths only
+  // (findAll/findOne). Write/lifecycle methods on this service are
+  // permission-gated to ADMIN_TAAZOUR/PROGRAMME roles and are out of scope
+  // for this phase's row-level enforcement.
+  private buildScopeFilter(
+    currentUser: AuthenticatedUser,
+  ): Prisma.PaymentOperationWhereInput | null {
+    if (currentUser.roles.includes('ADMIN_TAAZOUR')) {
+      return null;
+    }
+    if (currentUser.roles.includes('PROGRAMME')) {
+      return { socialProgramId: { in: currentUser.programmeIds } };
+    }
+    if (currentUser.roles.includes('OPERATOR')) {
+      if (!currentUser.operatorId) return { id: '' };
+      return { operatorId: currentUser.operatorId };
+    }
+    return { id: '' };
   }
 
   private validateDateRange(
@@ -860,6 +911,7 @@ export class PaymentOperationsService {
       name: operation.name as string,
       code: operation.code as string,
       socialProgramId: operation.socialProgramId as string,
+      operatorId: (operation.operatorId as string | null) ?? null,
       status: operation.status as string,
       period: (operation.period as string | null) ?? null,
       regionId: (operation.regionId as string | null) ?? null,

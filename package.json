@@ -24,8 +24,9 @@
     "test:coverage": "npx ts-node scripts/run-e2e.ts --coverage",
     "test:db:check": "npx ts-node scripts/run-e2e.ts --testPathPatterns=db-guard",
     "seed": "npm run build && node dist/prisma/seed.js",
-    "seed:demo": "npm run build && node dist/prisma/seed-demo-data.js",
-    "seed:ministerial-demo": "npm run build && node dist/prisma/seed-ministerial-demo.js"
+    "seed:fixed-accounts": "npm run build && node dist/prisma/seed-fixed-accounts.js",
+    "seed:demo": "npm run build && node dist/prisma/demo/seed-demo-data.js",
+    "seed:ministerial-demo": "npm run build && node dist/prisma/demo/seed-ministerial-demo.js"
   },
   "dependencies": {
     "@nest-lab/throttler-storage-redis": "^1.2.0",

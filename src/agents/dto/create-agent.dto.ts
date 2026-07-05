@@ -10,6 +10,13 @@ export class CreateAgentDto {
   @IsUUID()
   userId: string;
 
+  @ApiPropertyOptional({
+    description: 'Operator this agent is recruited/managed by. Must exist and be ACTIVE.',
+  })
+  @IsOptional()
+  @IsUUID()
+  operatorId?: string;
+
   @ApiPropertyOptional({ example: '+22222000000' })
   @IsOptional()
   @IsString()

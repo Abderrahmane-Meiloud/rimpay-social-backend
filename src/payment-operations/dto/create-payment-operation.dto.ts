@@ -15,6 +15,13 @@ export class CreatePaymentOperationDto {
   @IsUUID()
   socialProgramId: string;
 
+  @ApiPropertyOptional({
+    description: 'Operator assigned to execute this operation. Must exist and be ACTIVE.',
+  })
+  @IsOptional()
+  @IsUUID()
+  operatorId?: string;
+
   @ApiProperty({ example: 'OP-PNS-2026-Q1' })
   @IsString()
   @IsNotEmpty()

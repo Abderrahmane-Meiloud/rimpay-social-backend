@@ -50,6 +50,14 @@ enum AgentStatus {
   @@map("agent_status")
 }
 
+enum OperatorStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+
+  @@map("operator_status")
+}
+
 enum DeviceStatus {
   ACTIVE
   INACTIVE
@@ -283,11 +291,19 @@ model User {
   status       UserStatus @default(ACTIVE)
   authVersion  Int        @default(0) @map("auth_version")
 
+  // Institutional scoping: set only for users holding the OPERATOR role.
+  // Nullable because ADMIN_TAAZOUR and PROGRAMME users are never scoped to
+  // a single operator. onDelete: SetNull so deleting an operator never
+  // breaks a user record.
+  operatorId String? @map("operator_id")
+
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
   userRoles            UserRole[]
+  programmeScopes      UserProgrammeScope[]
+  operator             Operator?              @relation(fields: [operatorId], references: [id], onDelete: SetNull)
   authSessions         AuthSession[]
   agent                Agent?
   auditLogs            AuditLog[]
@@ -296,13 +312,38 @@ model User {
   paymentStatusChanges PaymentStatusHistory[]
   beneficiaryHistories BeneficiaryHistory[]
 
+  @@index([operatorId])
   @@map("users")
+}
+
+// Institutional scoping: a PROGRAMME-role user may be scoped to one or more
+// social programmes. Absence of any row for a user means "no programme
+// scope assigned yet" (service layer treats this as zero visible programmes,
+// not unrestricted access).
+model UserProgrammeScope {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  socialProgramId String   @map("social_program_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  socialProgram SocialProgram @relation(fields: [socialProgramId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, socialProgramId])
+  @@index([socialProgramId])
+  @@map("user_programme_scopes")
 }
 
 model Role {
   id          String   @id @default(uuid())
   name        String   @unique
   description String?
+  // Structural web/field role boundary (INSTITUTIONAL-RBAC-2-FIX).
+  // true for the three institutional web platform roles (ADMIN_TAAZOUR,
+  // PROGRAMME, OPERATOR); false for internal field/device technical roles
+  // (AGENT) that authenticate against the same API but must never be
+  // selectable/visible in any web role listing or user-management flow.
+  isWebRole   Boolean  @default(true) @map("is_web_role")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -563,8 +604,13 @@ model SocialProgram {
   institution  String?
   description  String?
   status       SocialProgramStatus @default(DRAFT)
-  startDate    DateTime?           @map("start_date")
-  endDate      DateTime?           @map("end_date")
+  // Required: every programme must have a defined start and end date.
+  // Nullable at the column level only to support a safe, non-destructive
+  // migration path for pre-existing rows (see migration for backfill);
+  // application-layer validation (DTOs + service) enforces these as
+  // mandatory for all create/update requests going forward.
+  startDate    DateTime            @map("start_date")
+  endDate      DateTime            @map("end_date")
   budgetAmount Decimal?            @map("budget_amount") @db.Decimal(18, 2)
 
   createdAt DateTime  @default(now()) @map("created_at")
@@ -572,6 +618,7 @@ model SocialProgram {
   deletedAt DateTime? @map("deleted_at")
 
   paymentOperations PaymentOperation[]
+  userScopes        UserProgrammeScope[]
 
   @@map("social_programs")
 }
@@ -583,6 +630,7 @@ model SocialProgram {
 model PaymentOperation {
   id              String          @id @default(uuid())
   socialProgramId String          @map("social_program_id")
+  operatorId      String?         @map("operator_id")
   name            String
   code            String          @unique
   period          String?
@@ -605,6 +653,7 @@ model PaymentOperation {
   deletedAt DateTime? @map("deleted_at")
 
   socialProgram SocialProgram @relation(fields: [socialProgramId], references: [id], onDelete: Restrict)
+  operator      Operator?     @relation(fields: [operatorId], references: [id], onDelete: SetNull)
   region        Region?       @relation(fields: [regionId], references: [id], onDelete: SetNull)
   moughataa     Moughataa?    @relation(fields: [moughataaId], references: [id], onDelete: SetNull)
   commune       Commune?      @relation(fields: [communeId], references: [id], onDelete: SetNull)
@@ -617,6 +666,7 @@ model PaymentOperation {
 
   @@index([status])
   @@index([socialProgramId])
+  @@index([operatorId])
   @@index([regionId])
   @@index([moughataaId])
   @@index([communeId])
@@ -674,12 +724,42 @@ model OperationAgent {
 }
 
 // =============================================================================
+// OPERATORS
+// =============================================================================
+
+// A contracted payment/distribution operator responsible for field execution.
+// An Operator recruits/manages Agents and may be assigned PaymentOperations.
+model Operator {
+  id           String         @id @default(uuid())
+  name         String
+  code         String         @unique
+  type         String?
+  legalName    String?        @map("legal_name")
+  contactName  String?        @map("contact_name")
+  contactPhone String?        @map("contact_phone")
+  contactEmail String?        @map("contact_email")
+  status       OperatorStatus @default(ACTIVE)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  agents            Agent[]
+  paymentOperations PaymentOperation[]
+  users             User[]
+
+  @@index([status])
+  @@map("operators")
+}
+
+// =============================================================================
 // AGENTS / DEVICES
 // =============================================================================
 
 model Agent {
   id           String      @id @default(uuid())
   userId       String      @unique @map("user_id")
+  operatorId   String?     @map("operator_id")
   phone        String?
   employeeCode String?     @unique @map("employee_code")
   status       AgentStatus @default(ACTIVE)
@@ -689,6 +769,7 @@ model Agent {
   deletedAt DateTime? @map("deleted_at")
 
   user                       User                        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  operator                   Operator?                   @relation(fields: [operatorId], references: [id], onDelete: SetNull)
   devices                    Device[]
   operationAgents            OperationAgent[]
   agentGeographicAssignments AgentGeographicAssignment[]
@@ -696,6 +777,7 @@ model Agent {
   syncBatches                SyncBatch[]
   anomalies                  Anomaly[]
 
+  @@index([operatorId])
   @@map("agents")
 }
 
@@ -787,6 +869,12 @@ model Payment {
   amount             Decimal       @db.Decimal(18, 2)
   status             PaymentStatus @default(PENDING)
   syncStatus         SyncStatus    @default(NOT_SYNCED) @map("sync_status")
+  // Server-generated, unique per-distribution claim code. Never derived
+  // from NNI or phone; not predictable (cryptographically random). Nullable
+  // at the column level only to keep pre-existing rows valid; every payment
+  // created going forward always receives one (see PaymentsService.generate
+  // and the backfill step in this field's migration).
+  claimCode          String?       @unique @map("claim_code")
   plannedAt          DateTime?     @map("planned_at")
   paidAt             DateTime?     @map("paid_at")
   cancelledAt        DateTime?     @map("cancelled_at")

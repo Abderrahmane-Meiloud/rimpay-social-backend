@@ -38,15 +38,13 @@ export class CreateProgramDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ example: '2026-01-01', format: 'date' })
-  @IsOptional()
+  @ApiProperty({ example: '2026-01-01', format: 'date' })
   @IsDateString()
-  startDate?: string;
+  startDate: string;
 
-  @ApiPropertyOptional({ example: '2026-12-31', format: 'date' })
-  @IsOptional()
+  @ApiProperty({ example: '2026-12-31', format: 'date' })
   @IsDateString()
-  endDate?: string;
+  endDate: string;
 
   @ApiPropertyOptional({
     description: 'Total program budget (decimal as string).',

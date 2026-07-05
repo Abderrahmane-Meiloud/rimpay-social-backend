@@ -191,3 +191,29 @@ export class BeneficiaryMutationResponseDto extends BeneficiaryDetailDto {
   })
   duplicateWarnings?: DuplicateWarningDto;
 }
+
+export class ImportRowErrorDto {
+  @ApiProperty({ example: 2, description: '1-based index of the row in the submitted payload' })
+  index: number;
+
+  @ApiProperty({ example: 'registryCode or nni already exists' })
+  reason: string;
+}
+
+export class ImportBeneficiariesResponseDto {
+  @ApiProperty({ example: 10, description: 'Number of beneficiaries created' })
+  created: number;
+
+  @ApiProperty({ example: 2, description: 'Number of rows skipped as duplicates (existing registryCode or nni)' })
+  skipped: number;
+
+  @ApiProperty({ example: 1, description: 'Number of rows rejected for failing validation' })
+  invalid: number;
+
+  @ApiProperty({
+    type: [ImportRowErrorDto],
+    description:
+      'Per-row validation/duplicate reasons. Never includes NNI or other raw sensitive values.',
+  })
+  errors: ImportRowErrorDto[];
+}

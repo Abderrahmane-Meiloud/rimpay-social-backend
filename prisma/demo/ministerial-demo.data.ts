@@ -203,6 +203,8 @@ export const demoProgram = {
   description:
     'Programme fictif de démonstration ministérielle — transferts monétaires réguliers aux ménages vulnérables. Toutes les données associées sont fictives.',
   status: 'ACTIVE' as const,
+  startDate: '2026-01-01',
+  endDate: '2026-12-31',
 };
 
 // ----------------------------------------------------------------------------
@@ -408,19 +410,19 @@ export const demoAnomalyTemplates: DemoAnomalyTemplate[] = [
 export interface DemoAccountSeed {
   email: string;
   fullName: string;
-  roleName: 'ADMIN' | 'PROGRAM_MANAGER' | 'AGENT' | 'AUDITOR';
+  roleName: 'ADMIN_TAAZOUR' | 'PROGRAMME' | 'OPERATOR' | 'AGENT';
 }
 
 export const demoAccounts: DemoAccountSeed[] = [
   {
     email: 'demo.admin@demo.rimpay.local',
     fullName: 'Administrateur Démonstration',
-    roleName: 'ADMIN',
+    roleName: 'ADMIN_TAAZOUR',
   },
   {
     email: 'demo.programme@demo.rimpay.local',
     fullName: 'Responsable Programme Démonstration',
-    roleName: 'PROGRAM_MANAGER',
+    roleName: 'PROGRAMME',
   },
   {
     email: 'demo.agent@demo.rimpay.local',
@@ -428,8 +430,8 @@ export const demoAccounts: DemoAccountSeed[] = [
     roleName: 'AGENT',
   },
   {
-    email: 'demo.auditeur@demo.rimpay.local',
-    fullName: 'Auditeur Démonstration',
-    roleName: 'AUDITOR',
+    email: 'demo.operateur@demo.rimpay.local',
+    fullName: 'Opérateur Démonstration',
+    roleName: 'OPERATOR',
   },
 ];

@@ -53,6 +53,17 @@ export class SocialProgramSummaryDto {
   code: string;
 }
 
+export class OperatorSummaryDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty()
+  code: string;
+}
+
 export class OperationListItemDto {
   @ApiProperty()
   id: string;
@@ -80,6 +91,9 @@ export class OperationListItemDto {
 
   @ApiProperty({ type: SocialProgramSummaryDto })
   socialProgram: SocialProgramSummaryDto;
+
+  @ApiPropertyOptional({ type: OperatorSummaryDto, nullable: true })
+  operator: OperatorSummaryDto | null;
 
   @ApiProperty({ type: OperationScopeDto })
   scope: OperationScopeDto;

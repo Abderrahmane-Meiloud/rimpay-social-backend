@@ -15,6 +15,8 @@ const userWithRolesInclude = {
       },
     },
   },
+  programmeScopes: { select: { socialProgramId: true } },
+  operator: { select: { id: true, status: true } },
 } as const;
 
 export type UserWithRoles = NonNullable<

@@ -71,7 +71,7 @@ describe('Authentication and RBAC (P0)', () => {
       expect(res.body).toHaveProperty('accessToken');
       expect(typeof res.body.accessToken).toBe('string');
       expect(res.body.user.email).toBe(fixtures.users.admin.email);
-      expect(res.body.roles).toContain('ADMIN');
+      expect(res.body.roles).toContain('ADMIN_TAAZOUR');
       expect(Array.isArray(res.body.permissions)).toBe(true);
       expect(res.body.permissions.length).toBeGreaterThan(0);
     });
@@ -85,18 +85,30 @@ describe('Authentication and RBAC (P0)', () => {
         .expect(200);
 
       expect(res.body.user.email).toBe(fixtures.users.admin.email);
-      expect(res.body.roles).toContain('ADMIN');
+      expect(res.body.roles).toContain('ADMIN_TAAZOUR');
       expect(res.body.permissions.length).toBeGreaterThan(0);
     });
   });
 
   describe('RBAC permission enforcement', () => {
-    it('AUDITOR cannot create beneficiary (403)', async () => {
+    it('PROGRAMME cannot create beneficiary (403)', async () => {
       await request(app.getHttpServer())
         .post('/beneficiaries')
-        .set('Authorization', `Bearer ${tokens.auditor}`)
+        .set('Authorization', `Bearer ${tokens.programme}`)
         .send({
           registryCode: 'RBAC-TEST-001',
+          fullName: 'RBAC Test',
+          localityId: fixtures.localities[0].id,
+        })
+        .expect(403);
+    });
+
+    it('OPERATOR cannot create beneficiary (403)', async () => {
+      await request(app.getHttpServer())
+        .post('/beneficiaries')
+        .set('Authorization', `Bearer ${tokens.operator}`)
+        .send({
+          registryCode: 'RBAC-TEST-002',
           fullName: 'RBAC Test',
           localityId: fixtures.localities[0].id,
         })
@@ -115,32 +127,32 @@ describe('Authentication and RBAC (P0)', () => {
         .expect(403);
     });
 
-    it('AUDITOR cannot resolve anomaly (403)', async () => {
+    it('OPERATOR cannot resolve anomaly (403)', async () => {
       await request(app.getHttpServer())
         .patch('/anomalies/00000000-0000-0000-0000-000000000000/resolve')
-        .set('Authorization', `Bearer ${tokens.auditor}`)
+        .set('Authorization', `Bearer ${tokens.operator}`)
         .send({ resolutionNotes: 'test' })
         .expect(403);
     });
 
-    it('ADMIN can access dashboard (200)', async () => {
+    it('ADMIN_TAAZOUR can access dashboard (200)', async () => {
       await request(app.getHttpServer())
         .get('/dashboard/summary')
         .set('Authorization', `Bearer ${tokens.admin}`)
         .expect(200);
     });
 
-    it('AUDITOR can read audit logs (200)', async () => {
+    it('PROGRAMME can read audit logs (200)', async () => {
       await request(app.getHttpServer())
         .get('/audit-logs')
-        .set('Authorization', `Bearer ${tokens.auditor}`)
+        .set('Authorization', `Bearer ${tokens.programme}`)
         .expect(200);
     });
 
-    it('PROGRAM_MANAGER can create payment operation (201)', async () => {
+    it('ADMIN_TAAZOUR can create payment operation (201)', async () => {
       const res = await request(app.getHttpServer())
         .post('/payment-operations')
-        .set('Authorization', `Bearer ${tokens.programManager}`)
+        .set('Authorization', `Bearer ${tokens.admin}`)
         .send({
           socialProgramId: fixtures.program.id,
           name: 'RBAC Allowed Op',

@@ -7,10 +7,9 @@ const BCRYPT_COST = 4; // low cost for test speed
 
 export const TEST_PASSWORDS = {
   admin: 'Test-Admin-Pass-2026!',
-  programManager: 'Test-PM-Pass-2026!',
-  supervisor: 'Test-Supervisor-Pass-2026!',
+  programme: 'Test-Programme-Pass-2026!',
+  operator: 'Test-Operator-Pass-2026!',
   agent: 'Test-Agent-Pass-2026!',
-  auditor: 'Test-Auditor-Pass-2026!',
 };
 
 export interface TestFixtureData {
@@ -18,10 +17,9 @@ export interface TestFixtureData {
   roles: Array<{ id: string; name: string }>;
   users: {
     admin: { id: string; email: string; password: string };
-    programManager: { id: string; email: string; password: string };
-    supervisor: { id: string; email: string; password: string };
+    programme: { id: string; email: string; password: string };
+    operator: { id: string; email: string; password: string };
     agent: { id: string; email: string; password: string };
-    auditor: { id: string; email: string; password: string };
   };
   regions: Array<{ id: string; code: string; name: string }>;
   moughataas: Array<{ id: string; code: string; name: string }>;
@@ -31,6 +29,8 @@ export interface TestFixtureData {
   beneficiaries: Array<{ id: string; registryCode: string; fullName: string }>;
   agent: { id: string; userId: string; employeeCode: string };
   device: { id: string; deviceUid: string };
+  operatorRecord: { id: string; code: string; name: string };
+  otherOperatorRecord: { id: string; code: string; name: string };
 }
 
 export async function seedTestFixtures(pool: Pool): Promise<TestFixtureData> {
@@ -46,6 +46,8 @@ export async function seedTestFixtures(pool: Pool): Promise<TestFixtureData> {
     beneficiaries: [],
     agent: {} as TestFixtureData['agent'],
     device: {} as TestFixtureData['device'],
+    operatorRecord: {} as TestFixtureData['operatorRecord'],
+    otherOperatorRecord: {} as TestFixtureData['otherOperatorRecord'],
   };
 
   // 1. Permissions
@@ -62,10 +64,10 @@ export async function seedTestFixtures(pool: Pool): Promise<TestFixtureData> {
   // 2. Roles
   for (const role of roles) {
     const result = await pool.query(
-      `INSERT INTO roles (id, name, description, created_at, updated_at)
-       VALUES (gen_random_uuid(), $1, $2, NOW(), NOW())
+      `INSERT INTO roles (id, name, description, is_web_role, created_at, updated_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NOW())
        RETURNING id, name`,
-      [role.name, role.description],
+      [role.name, role.description, role.isWebRole],
     );
     data.roles.push(result.rows[0]);
 
@@ -82,28 +84,28 @@ export async function seedTestFixtures(pool: Pool): Promise<TestFixtureData> {
     }
   }
 
-  // 3. Users (one per role)
+  // 3. Users (one per institutional web role, plus one field AGENT account)
   const userDefs = [
     {
       key: 'admin' as const,
       email: 'admin-test@rimpay.test',
       fullName: 'Test Administrator',
-      roleName: 'ADMIN',
+      roleName: 'ADMIN_TAAZOUR',
       password: TEST_PASSWORDS.admin,
     },
     {
-      key: 'programManager' as const,
-      email: 'pm-test@rimpay.test',
-      fullName: 'Test Program Manager',
-      roleName: 'PROGRAM_MANAGER',
-      password: TEST_PASSWORDS.programManager,
+      key: 'programme' as const,
+      email: 'programme-test@rimpay.test',
+      fullName: 'Test Programme Manager',
+      roleName: 'PROGRAMME',
+      password: TEST_PASSWORDS.programme,
     },
     {
-      key: 'supervisor' as const,
-      email: 'supervisor-test@rimpay.test',
-      fullName: 'Test Supervisor',
-      roleName: 'SUPERVISOR',
-      password: TEST_PASSWORDS.supervisor,
+      key: 'operator' as const,
+      email: 'operator-test@rimpay.test',
+      fullName: 'Test Operator Manager',
+      roleName: 'OPERATOR',
+      password: TEST_PASSWORDS.operator,
     },
     {
       key: 'agent' as const,
@@ -111,13 +113,6 @@ export async function seedTestFixtures(pool: Pool): Promise<TestFixtureData> {
       fullName: 'Test Field Agent',
       roleName: 'AGENT',
       password: TEST_PASSWORDS.agent,
-    },
-    {
-      key: 'auditor' as const,
-      email: 'auditor-test@rimpay.test',
-      fullName: 'Test Auditor',
-      roleName: 'AUDITOR',
-      password: TEST_PASSWORDS.auditor,
     },
   ];
 
@@ -215,11 +210,40 @@ export async function seedTestFixtures(pool: Pool): Promise<TestFixtureData> {
 
   // 5. Social program
   const progResult = await pool.query(
-    `INSERT INTO social_programs (id, name, code, type, institution, description, status, created_at, updated_at)
-     VALUES (gen_random_uuid(), 'Test Program', 'TEST-PROG-001', 'CASH_TRANSFER', 'Test Institution', 'Test social program', 'ACTIVE', NOW(), NOW())
+    `INSERT INTO social_programs (id, name, code, type, institution, description, status, start_date, end_date, created_at, updated_at)
+     VALUES (gen_random_uuid(), 'Test Program', 'TEST-PROG-001', 'CASH_TRANSFER', 'Test Institution', 'Test social program', 'ACTIVE', '2026-01-01', '2027-12-31', NOW(), NOW())
      RETURNING id, code, name`,
   );
   data.program = progResult.rows[0];
+
+  // Scope the fixture PROGRAMME user to this programme.
+  await pool.query(
+    `INSERT INTO user_programme_scopes (id, user_id, social_program_id, created_at)
+     VALUES (gen_random_uuid(), $1, $2, NOW())`,
+    [data.users.programme.id, data.program.id],
+  );
+
+  // 5b. Operators (one the fixture OPERATOR user belongs to, one it does not
+  // — used to prove cross-operator isolation).
+  const operatorResult = await pool.query(
+    `INSERT INTO operators (id, name, code, status, created_at, updated_at)
+     VALUES (gen_random_uuid(), 'Test Operator Alpha', 'TEST-OPR-ALPHA', 'ACTIVE', NOW(), NOW())
+     RETURNING id, code, name`,
+  );
+  data.operatorRecord = operatorResult.rows[0];
+
+  const otherOperatorResult = await pool.query(
+    `INSERT INTO operators (id, name, code, status, created_at, updated_at)
+     VALUES (gen_random_uuid(), 'Test Operator Beta', 'TEST-OPR-BETA', 'ACTIVE', NOW(), NOW())
+     RETURNING id, code, name`,
+  );
+  data.otherOperatorRecord = otherOperatorResult.rows[0];
+
+  // Scope the fixture OPERATOR user to operatorRecord (not otherOperatorRecord).
+  await pool.query(
+    `UPDATE users SET operator_id = $1 WHERE id = $2`,
+    [data.operatorRecord.id, data.users.operator.id],
+  );
 
   // 6. Beneficiaries (10, all in locality A1)
   for (let i = 1; i <= 10; i++) {

@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   AgentStatus,
   GeoAssignmentStatus,
+  OperatorStatus,
   UserStatus,
 } from '../../../generated/prisma/client';
 
@@ -9,6 +10,13 @@ export class GeoSummaryDto {
   @ApiProperty() id: string;
   @ApiProperty() name: string;
   @ApiProperty() code: string;
+}
+
+export class OperatorSummaryDto {
+  @ApiProperty() id: string;
+  @ApiProperty() name: string;
+  @ApiProperty() code: string;
+  @ApiProperty({ enum: OperatorStatus }) status: OperatorStatus;
 }
 
 export class UserSummaryDto {
@@ -28,6 +36,9 @@ export class AgentListItemDto {
 
   @ApiPropertyOptional({ type: UserSummaryDto, nullable: true })
   user: UserSummaryDto | null;
+
+  @ApiPropertyOptional({ type: OperatorSummaryDto, nullable: true })
+  operator: OperatorSummaryDto | null;
 
   @ApiProperty({ example: 0 }) devicesCount: number;
 

@@ -62,9 +62,13 @@ export interface PaymentSummary {
   lastPaidAt: Date | null;
 }
 
-// deletedAt is intentionally never mapped into any response.
+// deletedAt is intentionally never mapped into any response. `nni` is masked
+// to null unless the caller holds beneficiaries.read_sensitive (see
+// beneficiaries.service.ts) — only ADMIN_TAAZOUR does in the institutional
+// role model.
 export function toBeneficiaryListItem(
   row: BeneficiaryListRow,
+  canViewSensitive: boolean,
 ): BeneficiaryListItemDto {
   const commune = row.locality.commune;
   const moughataa = commune.moughataa;
@@ -75,7 +79,7 @@ export function toBeneficiaryListItem(
     id: row.id,
     registryCode: row.registryCode,
     fullName: row.fullName,
-    nni: row.nni,
+    nni: canViewSensitive ? row.nni : null,
     status: row.status,
     locality: { id: row.locality.id, name: row.locality.name, code: row.locality.code },
     commune: { id: commune.id, name: commune.name, code: commune.code },
@@ -92,6 +96,7 @@ export function toBeneficiaryDetail(
   row: BeneficiaryDetailRow,
   anomaliesSummary: AnomaliesSummary,
   paymentSummary: PaymentSummary,
+  canViewSensitive: boolean,
 ): BeneficiaryDetailDto {
   const commune = row.locality.commune;
   const moughataa = commune.moughataa;
@@ -103,7 +108,7 @@ export function toBeneficiaryDetail(
     id: row.id,
     registryCode: row.registryCode,
     fullName: row.fullName,
-    nni: row.nni,
+    nni: canViewSensitive ? row.nni : null,
     status: row.status,
     locality: { id: row.locality.id, name: row.locality.name, code: row.locality.code },
     commune: { id: commune.id, name: commune.name, code: commune.code },

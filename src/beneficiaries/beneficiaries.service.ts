@@ -13,6 +13,7 @@ import {
 } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AnomalyDetectionService } from '../anomalies/anomaly-detection.service';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user.interface';
 import {
   buildPaginatedResponse,
   PaginatedResponseDto,
@@ -21,10 +22,15 @@ import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 import { BeneficiaryQueryDto } from './dto/beneficiary-query.dto';
 import {
+  ImportBeneficiariesDto,
+  ImportBeneficiaryRowDto,
+} from './dto/import-beneficiaries.dto';
+import {
   BeneficiaryDetailDto,
   BeneficiaryListItemDto,
   BeneficiaryMutationResponseDto,
   DuplicateWarningDto,
+  ImportBeneficiariesResponseDto,
 } from './dto/beneficiary-response.dto';
 import {
   AnomaliesSummary,
@@ -50,6 +56,11 @@ const TRACKED_FIELDS = [
 
 const REGISTRY_CODE_MAX_RETRIES = 5;
 
+// Internal-only signal used to route a rejected import row to the
+// "skipped" bucket instead of "invalid" — never thrown across the service
+// boundary, always caught within importMany.
+class ImportDuplicateError extends Error {}
+
 @Injectable()
 export class BeneficiariesService {
   constructor(
@@ -59,8 +70,10 @@ export class BeneficiariesService {
 
   async findAll(
     query: BeneficiaryQueryDto,
+    currentUser: AuthenticatedUser,
   ): Promise<PaginatedResponseDto<BeneficiaryListItemDto>> {
-    const where = this.buildWhere(query);
+    const where = await this.buildWhere(query, currentUser);
+    const canViewSensitive = this.canViewSensitive(currentUser);
 
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.beneficiary.findMany({
@@ -74,14 +87,19 @@ export class BeneficiariesService {
     ]);
 
     return buildPaginatedResponse(
-      rows.map(toBeneficiaryListItem),
+      rows.map((row) => toBeneficiaryListItem(row, canViewSensitive)),
       total,
       query.page,
       query.limit,
     );
   }
 
-  async findOne(id: string): Promise<BeneficiaryDetailDto> {
+  async findOne(
+    id: string,
+    currentUser: AuthenticatedUser,
+  ): Promise<BeneficiaryDetailDto> {
+    await this.assertBeneficiaryInScope(id, currentUser);
+
     const row = await this.prisma.beneficiary.findFirst({
       where: { id, deletedAt: null },
       include: beneficiaryDetailInclude,
@@ -96,13 +114,19 @@ export class BeneficiariesService {
       this.getPaymentSummary(id),
     ]);
 
-    return toBeneficiaryDetail(row, anomaliesSummary, paymentSummary);
+    return toBeneficiaryDetail(
+      row,
+      anomaliesSummary,
+      paymentSummary,
+      this.canViewSensitive(currentUser),
+    );
   }
 
   async create(
     dto: CreateBeneficiaryDto,
-    currentUserId: string,
+    currentUser: AuthenticatedUser,
   ): Promise<BeneficiaryMutationResponseDto> {
+    const currentUserId = currentUser.id;
     await this.assertLocalityExists(dto.localityId);
 
     const registryCode = await this.resolveRegistryCode(dto.registryCode);
@@ -150,15 +174,163 @@ export class BeneficiariesService {
       dto.primaryContact?.phone,
     );
 
-    const detail = await this.findOne(created.id);
+    const detail = await this.findOne(created.id, currentUser);
     return { ...detail, duplicateWarnings };
+  }
+
+  // Bulk import (ADMIN_TAAZOUR only — enforced via beneficiaries.import
+  // permission at the controller level). Each row is validated and inserted
+  // independently: one bad or duplicate row never aborts the whole batch.
+  // The response never echoes back raw NNI or other row payloads, only
+  // aggregate counts and a reason string per rejected row.
+  async importMany(
+    dto: ImportBeneficiariesDto,
+    currentUser: AuthenticatedUser,
+  ): Promise<ImportBeneficiariesResponseDto> {
+    const currentUserId = currentUser.id;
+    const result: ImportBeneficiariesResponseDto = {
+      created: 0,
+      skipped: 0,
+      invalid: 0,
+      errors: [],
+    };
+
+    const seenRegistryCodes = new Set<string>();
+    const seenNnis = new Set<string>();
+
+    for (let i = 0; i < dto.beneficiaries.length; i++) {
+      const row = dto.beneficiaries[i];
+      const index = i + 1;
+
+      try {
+        await this.importRow(row, currentUserId, seenRegistryCodes, seenNnis);
+        result.created++;
+      } catch (err) {
+        if (err instanceof ImportDuplicateError) {
+          result.skipped++;
+          result.errors.push({ index, reason: err.message });
+        } else if (err instanceof BadRequestException) {
+          result.invalid++;
+          result.errors.push({ index, reason: err.message });
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  private async importRow(
+    row: ImportBeneficiaryRowDto,
+    currentUserId: string,
+    seenRegistryCodes: Set<string>,
+    seenNnis: Set<string>,
+  ): Promise<void> {
+    if (!row.fullName || !row.fullName.trim()) {
+      throw new BadRequestException('fullName is required');
+    }
+    if (!row.localityId) {
+      throw new BadRequestException('localityId is required');
+    }
+
+    const locality = await this.prisma.locality.findUnique({
+      where: { id: row.localityId },
+      select: { id: true },
+    });
+    if (!locality) {
+      throw new BadRequestException('Invalid localityId');
+    }
+
+    if (row.registryCode && seenRegistryCodes.has(row.registryCode)) {
+      throw new ImportDuplicateError('duplicate registryCode within import batch');
+    }
+    if (row.nni && seenNnis.has(row.nni)) {
+      throw new ImportDuplicateError('duplicate nni within import batch');
+    }
+
+    const registryCode = await this.resolveImportRegistryCode(row.registryCode);
+
+    if (row.nni) {
+      const existingByNni = await this.prisma.beneficiary.findFirst({
+        where: { nni: row.nni, deletedAt: null },
+        select: { id: true },
+      });
+      if (existingByNni) {
+        throw new ImportDuplicateError('nni already exists');
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const beneficiary = await tx.beneficiary.create({
+        data: {
+          registryCode,
+          fullName: row.fullName,
+          nni: row.nni,
+          localityId: row.localityId,
+          status: BeneficiaryStatus.ACTIVE,
+          birthDate: row.birthDate ? new Date(row.birthDate) : undefined,
+          source: 'import',
+          contacts: row.phone
+            ? {
+                create: {
+                  type: ContactType.PRIMARY,
+                  phone: row.phone,
+                },
+              }
+            : undefined,
+        },
+      });
+
+      await tx.beneficiaryHistory.create({
+        data: {
+          beneficiaryId: beneficiary.id,
+          oldValues: Prisma.DbNull,
+          newValues: this.snapshot(beneficiary),
+          changedById: currentUserId,
+          reason: 'imported',
+        },
+      });
+    });
+
+    if (row.registryCode) seenRegistryCodes.add(row.registryCode);
+    if (row.nni) seenNnis.add(row.nni);
+  }
+
+  private async resolveImportRegistryCode(provided?: string): Promise<string> {
+    if (provided) {
+      const existing = await this.prisma.beneficiary.findUnique({
+        where: { registryCode: provided },
+        select: { id: true },
+      });
+      if (existing) {
+        throw new ImportDuplicateError('registryCode already exists');
+      }
+      return provided;
+    }
+
+    for (let attempt = 0; attempt < REGISTRY_CODE_MAX_RETRIES; attempt++) {
+      const candidate = this.generateRegistryCode();
+      const existing = await this.prisma.beneficiary.findUnique({
+        where: { registryCode: candidate },
+        select: { id: true },
+      });
+      if (!existing) {
+        return candidate;
+      }
+    }
+
+    throw new ConflictException(
+      'Could not generate a unique registryCode, please retry',
+    );
   }
 
   async update(
     id: string,
     dto: UpdateBeneficiaryDto,
-    currentUserId: string,
+    currentUser: AuthenticatedUser,
   ): Promise<BeneficiaryMutationResponseDto> {
+    const currentUserId = currentUser.id;
     const existing = await this.prisma.beneficiary.findFirst({
       where: { id, deletedAt: null },
     });
@@ -216,7 +388,7 @@ export class BeneficiariesService {
 
     await this.anomalyDetection.detectBeneficiaryModifiedAfterPayment(id);
 
-    const detail = await this.findOne(id);
+    const detail = await this.findOne(id, currentUser);
     return { ...detail, duplicateWarnings };
   }
 
@@ -261,7 +433,10 @@ export class BeneficiariesService {
   // Helpers
   // ---------------------------------------------------------------------------
 
-  private buildWhere(query: BeneficiaryQueryDto): Prisma.BeneficiaryWhereInput {
+  private async buildWhere(
+    query: BeneficiaryQueryDto,
+    currentUser: AuthenticatedUser,
+  ): Promise<Prisma.BeneficiaryWhereInput> {
     const where: Prisma.BeneficiaryWhereInput = { deletedAt: null };
     const and: Prisma.BeneficiaryWhereInput[] = [];
 
@@ -290,8 +465,77 @@ export class BeneficiariesService {
         locality: { commune: { moughataa: { regionId: query.regionId } } },
       });
 
+    const scopeFilter = this.buildScopeFilter(currentUser);
+    if (scopeFilter) and.push(scopeFilter);
+
     if (and.length > 0) where.AND = and;
     return where;
+  }
+
+  // Institutional scoping (INSTITUTIONAL-RBAC-2):
+  // - ADMIN_TAAZOUR: unrestricted (no filter).
+  // - PROGRAMME: only beneficiaries assigned to a payment operation of one
+  //   of the caller's scoped programmes.
+  // - OPERATOR: only beneficiaries assigned to a payment operation of the
+  //   caller's operator (cannot browse the full citizen registry).
+  // A PROGRAMME/OPERATOR user with no scope configured sees zero rows,
+  // never an unrestricted registry.
+  private buildScopeFilter(
+    currentUser: AuthenticatedUser,
+  ): Prisma.BeneficiaryWhereInput | null {
+    if (currentUser.roles.includes('ADMIN_TAAZOUR')) {
+      return null;
+    }
+
+    if (currentUser.roles.includes('PROGRAMME')) {
+      return {
+        paymentOperationBeneficiaries: {
+          some: {
+            paymentOperation: {
+              socialProgramId: { in: currentUser.programmeIds },
+            },
+          },
+        },
+      };
+    }
+
+    if (currentUser.roles.includes('OPERATOR')) {
+      if (!currentUser.operatorId) {
+        return { id: { in: [] } };
+      }
+      return {
+        paymentOperationBeneficiaries: {
+          some: {
+            paymentOperation: { operatorId: currentUser.operatorId },
+          },
+        },
+      };
+    }
+
+    // Any other caller (e.g. AGENT) sees nothing through this endpoint by
+    // default — field agents consume beneficiaries via the payments/field
+    // flow, not this registry-wide listing.
+    return { id: { in: [] } };
+  }
+
+  private canViewSensitive(currentUser: AuthenticatedUser): boolean {
+    return currentUser.permissions.includes('beneficiaries.read_sensitive');
+  }
+
+  private async assertBeneficiaryInScope(
+    beneficiaryId: string,
+    currentUser: AuthenticatedUser,
+  ): Promise<void> {
+    const scopeFilter = this.buildScopeFilter(currentUser);
+    if (!scopeFilter) return;
+
+    const match = await this.prisma.beneficiary.findFirst({
+      where: { id: beneficiaryId, deletedAt: null, AND: [scopeFilter] },
+      select: { id: true },
+    });
+    if (!match) {
+      throw new NotFoundException('Beneficiary not found');
+    }
   }
 
   private async assertLocalityExists(localityId: string): Promise<void> {

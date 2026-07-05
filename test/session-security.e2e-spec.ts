@@ -73,8 +73,8 @@ describe('Session Security (P0)', () => {
       const res = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
-          email: fixtures.users.programManager.email,
-          password: fixtures.users.programManager.password,
+          email: fixtures.users.programme.email,
+          password: fixtures.users.programme.password,
         })
         .expect(200);
 
@@ -180,8 +180,8 @@ describe('Session Security (P0)', () => {
       const loginRes = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
-          email: fixtures.users.supervisor.email,
-          password: fixtures.users.supervisor.password,
+          email: fixtures.users.operator.email,
+          password: fixtures.users.operator.password,
         })
         .expect(200);
 
@@ -225,12 +225,12 @@ describe('Session Security (P0)', () => {
 
     it('access token with wrong auth version is rejected', async () => {
       const { sessionId } =
-        await sessionService.createSessionWithAudit(fixtures.users.supervisor.id, {});
+        await sessionService.createSessionWithAudit(fixtures.users.operator.id, {});
       const jwtService = app.get(JwtService);
       const token = await jwtService.signAsync({
-        sub: fixtures.users.supervisor.id,
-        email: fixtures.users.supervisor.email,
-        roles: ['SUPERVISOR'],
+        sub: fixtures.users.operator.id,
+        email: fixtures.users.operator.email,
+        roles: ['OPERATOR'],
         sid: sessionId,
         av: 999,
       });
@@ -243,19 +243,19 @@ describe('Session Security (P0)', () => {
 
     it('inactive user is rejected even with unexpired JWT', async () => {
       const { sessionId } =
-        await sessionService.createSessionWithAudit(fixtures.users.auditor.id, {});
+        await sessionService.createSessionWithAudit(fixtures.users.agent.id, {});
       const jwtService = app.get(JwtService);
       const token = await jwtService.signAsync({
-        sub: fixtures.users.auditor.id,
-        email: fixtures.users.auditor.email,
-        roles: ['AUDITOR'],
+        sub: fixtures.users.agent.id,
+        email: fixtures.users.agent.email,
+        roles: ['AGENT'],
         sid: sessionId,
         av: 0,
       });
 
       await pool.query(
         `UPDATE users SET status = 'INACTIVE' WHERE id = $1`,
-        [fixtures.users.auditor.id],
+        [fixtures.users.agent.id],
       );
 
       await request(app.getHttpServer())
@@ -265,7 +265,7 @@ describe('Session Security (P0)', () => {
 
       await pool.query(
         `UPDATE users SET status = 'ACTIVE' WHERE id = $1`,
-        [fixtures.users.auditor.id],
+        [fixtures.users.agent.id],
       );
     });
 
@@ -274,7 +274,7 @@ describe('Session Security (P0)', () => {
       const token = await jwtService.signAsync({
         sub: fixtures.users.admin.id,
         email: fixtures.users.admin.email,
-        roles: ['ADMIN'],
+        roles: ['ADMIN_TAAZOUR'],
         av: 0,
       });
 
@@ -289,7 +289,7 @@ describe('Session Security (P0)', () => {
       const token = await jwtService.signAsync({
         sub: fixtures.users.admin.id,
         email: fixtures.users.admin.email,
-        roles: ['ADMIN'],
+        roles: ['ADMIN_TAAZOUR'],
         sid: 'fake-session-id',
       });
 
@@ -301,12 +301,12 @@ describe('Session Security (P0)', () => {
 
     it('JWT for user A with session belonging to user B returns 401', async () => {
       const { sessionId: sessionB } =
-        await sessionService.createSessionWithAudit(fixtures.users.auditor.id, {});
+        await sessionService.createSessionWithAudit(fixtures.users.agent.id, {});
       const jwtService = app.get(JwtService);
       const token = await jwtService.signAsync({
         sub: fixtures.users.admin.id,
         email: fixtures.users.admin.email,
-        roles: ['ADMIN'],
+        roles: ['ADMIN_TAAZOUR'],
         sid: sessionB,
         av: 0,
       });
@@ -321,11 +321,11 @@ describe('Session Security (P0)', () => {
   describe('Inactive user refresh protection', () => {
     it('inactive user refresh is rejected, session revoked, audit created', async () => {
       const { sessionId, rawRefreshToken: rid } =
-        await sessionService.createSessionWithAudit(fixtures.users.auditor.id, {});
+        await sessionService.createSessionWithAudit(fixtures.users.agent.id, {});
 
       await pool.query(
         `UPDATE users SET status = 'INACTIVE' WHERE id = $1`,
-        [fixtures.users.auditor.id],
+        [fixtures.users.agent.id],
       );
 
       await request(app.getHttpServer())
@@ -348,7 +348,7 @@ describe('Session Security (P0)', () => {
 
       await pool.query(
         `UPDATE users SET status = 'ACTIVE' WHERE id = $1`,
-        [fixtures.users.auditor.id],
+        [fixtures.users.agent.id],
       );
     });
   });
@@ -356,7 +356,7 @@ describe('Session Security (P0)', () => {
   describe('Atomic user-status in CAS refresh claim', () => {
     it('CAS claim fails atomically when user is inactive — no replacement token created', async () => {
       const { sessionId, rawRefreshToken: rid } =
-        await sessionService.createSessionWithAudit(fixtures.users.auditor.id, {});
+        await sessionService.createSessionWithAudit(fixtures.users.agent.id, {});
 
       const tokensBefore = await pool.query(
         `SELECT count(*)::int AS c FROM refresh_tokens WHERE session_id = $1`,
@@ -365,7 +365,7 @@ describe('Session Security (P0)', () => {
 
       await pool.query(
         `UPDATE users SET status = 'INACTIVE' WHERE id = $1`,
-        [fixtures.users.auditor.id],
+        [fixtures.users.agent.id],
       );
 
       const result = await sessionService.rotateRefreshToken(rid);
@@ -385,7 +385,7 @@ describe('Session Security (P0)', () => {
 
       await pool.query(
         `UPDATE users SET status = 'ACTIVE' WHERE id = $1`,
-        [fixtures.users.auditor.id],
+        [fixtures.users.agent.id],
       );
     });
   });

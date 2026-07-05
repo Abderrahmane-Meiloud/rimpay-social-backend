@@ -56,8 +56,12 @@ async function seedRoles(prisma: PrismaClient) {
 
     await prisma.role.upsert({
       where: { name: role.name },
-      update: { description: role.description },
-      create: { name: role.name, description: role.description },
+      update: { description: role.description, isWebRole: role.isWebRole },
+      create: {
+        name: role.name,
+        description: role.description,
+        isWebRole: role.isWebRole,
+      },
     });
 
     ensured++;
@@ -140,7 +144,7 @@ async function seedAdminUser(prisma: PrismaClient) {
   }
 
   const adminRole = await prisma.role.findUniqueOrThrow({
-    where: { name: 'ADMIN' },
+    where: { name: 'ADMIN_TAAZOUR' },
   });
 
   await prisma.userRole.upsert({
@@ -229,6 +233,8 @@ async function seedSocialPrograms(prisma: PrismaClient) {
         institution: program.institution,
         description: program.description,
         status: program.status,
+        startDate: new Date(program.startDate),
+        endDate: new Date(program.endDate),
       },
       create: {
         code: program.code,
@@ -237,6 +243,8 @@ async function seedSocialPrograms(prisma: PrismaClient) {
         institution: program.institution,
         description: program.description,
         status: program.status,
+        startDate: new Date(program.startDate),
+        endDate: new Date(program.endDate),
       },
     });
     ensured++;
