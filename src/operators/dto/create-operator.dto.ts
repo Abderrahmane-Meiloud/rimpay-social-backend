@@ -10,7 +10,7 @@ import {
 // status is intentionally NOT accepted on create: a new operator always
 // starts as ACTIVE. Use PATCH /operators/:id/status to change it.
 export class CreateOperatorDto {
-  @ApiProperty({ example: 'Opérateur Démonstration Nord' })
+  @ApiProperty({ example: 'Opérateur Nord' })
   @IsString()
   @IsNotEmpty()
   name: string;
@@ -25,7 +25,7 @@ export class CreateOperatorDto {
   @IsString()
   type?: string;
 
-  @ApiPropertyOptional({ example: 'Société Démonstration Nord SARL' })
+  @ApiPropertyOptional({ example: 'Société Opérateur Nord SARL' })
   @IsOptional()
   @IsString()
   legalName?: string;
@@ -42,7 +42,7 @@ export class CreateOperatorDto {
   @MaxLength(50)
   contactPhone?: string;
 
-  @ApiPropertyOptional({ example: 'contact@operateur-nord-demo.test' })
+  @ApiPropertyOptional({ example: 'contact@operateur-nord.mr' })
   @IsOptional()
   @IsEmail()
   contactEmail?: string;

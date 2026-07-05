@@ -4,7 +4,7 @@ import { OperatorStatus } from '../../../generated/prisma/client';
 export class OperatorListItemDto {
   @ApiProperty() id: string;
   @ApiProperty({ example: 'OP-NORD-01' }) code: string;
-  @ApiProperty({ example: 'Opérateur Démonstration Nord' }) name: string;
+  @ApiProperty({ example: 'Opérateur Nord' }) name: string;
   @ApiPropertyOptional({ nullable: true }) type: string | null;
   @ApiProperty({ enum: OperatorStatus }) status: OperatorStatus;
   @ApiProperty({ example: 0 }) agentsCount: number;

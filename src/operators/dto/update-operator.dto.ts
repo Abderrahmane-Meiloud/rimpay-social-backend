@@ -10,7 +10,7 @@ import {
 // code is intentionally NOT updatable: it is the immutable operator identity.
 // status is changed only via PATCH /operators/:id/status.
 export class UpdateOperatorDto {
-  @ApiPropertyOptional({ example: 'Opérateur Démonstration Nord' })
+  @ApiPropertyOptional({ example: 'Opérateur Nord' })
   @IsOptional()
   @IsString()
   @IsNotEmpty()
@@ -21,7 +21,7 @@ export class UpdateOperatorDto {
   @IsString()
   type?: string;
 
-  @ApiPropertyOptional({ example: 'Société Démonstration Nord SARL' })
+  @ApiPropertyOptional({ example: 'Société Opérateur Nord SARL' })
   @IsOptional()
   @IsString()
   legalName?: string;
@@ -38,7 +38,7 @@ export class UpdateOperatorDto {
   @MaxLength(50)
   contactPhone?: string;
 
-  @ApiPropertyOptional({ example: 'contact@operateur-nord-demo.test' })
+  @ApiPropertyOptional({ example: 'contact@operateur-nord.mr' })
   @IsOptional()
   @IsEmail()
   contactEmail?: string;
